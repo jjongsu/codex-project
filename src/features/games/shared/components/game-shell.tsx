@@ -1,6 +1,7 @@
 'use client';
 
 import type { GameMetadata } from '@/features/games';
+import { BlockJamBlitzExperience } from '@/features/games/block-jam-blitz/components/block-jam-blitz-experience';
 import { useGameUiStore } from '@/features/games/shared/store/game-ui-store';
 
 interface GameShellProps {
@@ -13,6 +14,10 @@ export function GameShell({ game }: GameShellProps) {
   const setPaused = useGameUiStore((state) => state.setPaused);
   const toggleMuted = useGameUiStore((state) => state.toggleMuted);
   const reset = useGameUiStore((state) => state.reset);
+
+  if (game.slug === 'block-jam-blitz') {
+    return <BlockJamBlitzExperience game={game} />;
+  }
 
   return (
     <div className="grid gap-6 lg:grid-cols-[minmax(0,1.6fr)_minmax(320px,0.9fr)]">

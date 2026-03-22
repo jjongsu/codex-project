@@ -233,7 +233,7 @@
   - 향후 보안 강화가 쉽다.
   - Supabase를 "백엔드처럼" 간단히 사용할 수 있다.
 - 환경변수 원칙:
-  - 브라우저 공개용: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`
+  - 브라우저 공개용: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_DEFAULT_KEY`
   - 서버 전용: `SUPABASE_SECRET_KEY`
   - 서버 전용 키는 브라우저 번들에 절대 포함되지 않도록 한다.
 
@@ -386,14 +386,22 @@
 - Vercel 프로젝트 생성
 - 환경변수 등록
   - `NEXT_PUBLIC_SUPABASE_URL`
-  - `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`
+  - `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_DEFAULT_KEY`
   - `SUPABASE_SECRET_KEY` (서버 전용)
 
 ## 12. 개발 단계 제안
 
-아래 순서대로 진행하면 된다.
+아래 순서대로 진행하되, 현재 기준 진행 상태를 함께 관리한다.
 
-### Phase 1. 프로젝트 초기 세팅
+### 현재 진행 상태 요약
+- 완료: `Next.js App Router`, `Tailwind CSS`, 기본 레이아웃, `/`, `/game`, `/game/[slug]`, `/ranking`, `/content`, `/about`, `/privacy`, `/terms` 스캐폴드
+- 완료: 게임 메타데이터, 라우트 상수, 점수 규칙 상수, `Zustand` 공통 UI 스토어, `Phaser` 연동 기반
+- 완료: `Supabase` 프로젝트 연결, `high_scores` 테이블 생성, `GET /api/scores`, `POST /api/scores`, 입력 검증, 실제 insert/read 재검증
+- 완료: `Block Jam Blitz` 1차 플레이어블 구현, 점수 저장 폼, 랭킹 연동
+- 진행 중: 공통 HUD/모달 추출, `/ranking` 실데이터화, 모바일 UX 보정, 제출 abuse 보호 로직
+- 다음 우선순위: `Block Jam Blitz` 마감도 보정 -> 공통 랭킹/HUD 정리 -> `Snake Survivor` MVP 착수
+
+### Phase 1. 프로젝트 초기 세팅 (완료)
 - Next.js 프로젝트 생성
 - TypeScript, Tailwind CSS 설정
 - 기본 레이아웃 구성
@@ -402,7 +410,7 @@
 - 추천안 문서 기준 슬러그와 게임 메타데이터 상수 정의
 - `Phaser`, `Zustand` 설치 및 기본 구조 생성
 
-### Phase 2. 공통 UI 제작
+### Phase 2. 공통 UI 제작 (기본 골격 완료)
 - 홈 화면
 - `/game` 목록 화면
 - 공통 헤더/푸터
@@ -411,7 +419,7 @@
 - `GameLayout`, `HUD`, `PauseModal`, `ResultModal` 공통화
 - `Zustand` 공통 스토어 초안 작성
 
-### Phase 3. Supabase 연결
+### Phase 3. Supabase 연결 (완료)
 - Supabase 프로젝트 생성
 - `high_scores` 테이블 생성
 - Next.js에서 연결 확인
@@ -419,7 +427,7 @@
 - 기본 rate limit 및 검증 로직 추가
 - 게임별 점수 상한선 검증 규칙 초안 작성
 
-### Phase 4. 첫 번째 게임 완성
+### Phase 4. 첫 번째 게임 완성 (1차 플레이어블 완료, UX 보정 남음)
 - `Block Jam Blitz` 구현
 - 8x8 보드와 3개 블록 큐 구현
 - 라인 제거와 콤보 점수 구현
@@ -469,39 +477,40 @@
 - [x] 프로젝트 기획서 작성
 - [x] 트렌드 맞춤 3종 추천안 작성
 - [x] 게임별 상세 기획 문서 작성
-- [ ] 게임 3종 슬러그 및 점수 규칙 최종 확정
-- [ ] 페이지 구조 확정
+- [x] 게임 3종 슬러그 및 점수 규칙 최종 확정
+- [x] 페이지 구조 확정
 - [ ] 공통 HUD 및 입력 패턴 정리
 - [ ] 디자인 톤앤매너 정리
 
 ### 프론트엔드
-- [ ] Next.js 프로젝트 생성
-- [ ] Tailwind CSS 적용
-- [ ] App Router 구조 생성
-- [ ] Phaser 연동
-- [ ] Zustand 스토어 구성
-- [ ] 공통 레이아웃 제작
-- [ ] 홈 페이지 제작
-- [ ] 게임 목록 페이지 제작
+- [x] Next.js 프로젝트 생성
+- [x] Tailwind CSS 적용
+- [x] App Router 구조 생성
+- [x] Phaser 연동
+- [x] Zustand 스토어 구성
+- [x] 공통 레이아웃 제작
+- [x] 홈 페이지 제작
+- [x] 게임 목록 페이지 제작
 - [ ] 게임 공통 HUD/모달 제작
 
 ### 게임 개발
-- [ ] `Block Jam Blitz` MVP 구현
+- [x] `Block Jam Blitz` MVP 구현
 - [ ] `Snake Survivor` MVP 구현
 - [ ] `Brick Shot Rush` MVP 구현
-- [ ] 점수 시스템 공통화
-- [ ] 게임별 검증 규칙 정의
+- [x] 점수 시스템 공통화
+- [x] 게임별 검증 규칙 정의
 
 ### 백엔드
-- [ ] Supabase 프로젝트 생성
-- [ ] `high_scores` 테이블 및 slug 제약조건 생성
-- [ ] 점수 저장 API 작성
-- [ ] 랭킹 조회 API 작성
-- [ ] 입력 검증 추가
+- [x] Supabase 프로젝트 생성
+- [x] `high_scores` 테이블 및 slug 제약조건 생성
+- [x] 점수 저장 API 작성
+- [x] 랭킹 조회 API 작성
+- [x] 입력 검증 추가
 
 ### 운영/배포
+- [x] 로컬 환경변수 설정 및 Supabase 연결 확인
 - [ ] Vercel 배포
-- [ ] 환경변수 설정
+- [ ] Vercel 환경변수 등록
 - [ ] SEO 설정
 - [ ] AdSense 준비
 - [ ] 콘텐츠 페이지 작성
@@ -537,16 +546,14 @@
 
 다음 단계는 아래 순서가 가장 안정적이다.
 
-1. Next.js 프로젝트 생성
-2. Tailwind CSS 적용
-3. App Router 기본 구조 생성
-4. `docs/trend-fit-game-design-briefs.md` 기준으로 게임 메타데이터와 슬러그 상수 정의
-5. `/`, `/game`, `/game/[slug]` 페이지 골격 생성
-6. Supabase 연동 준비
-7. 공통 HUD, 결과 모달, 점수 저장/조회 구조 구현
-8. `Block Jam Blitz`부터 구현 시작
-9. 점수 저장/조회 검증
-10. `Snake Survivor`, `Brick Shot Rush` 순서로 확장
+1. `Block Jam Blitz` 모바일 드래그 UX와 세션 종료 피드백을 보정한다.
+2. `GameShell` 기준으로 공통 HUD, 랭킹 패널, 점수 제출 UI를 분리한다.
+3. `/ranking` 페이지를 Supabase 실데이터 기반으로 전환한다.
+4. 점수 제출 abuse 방지를 위한 rate limit 전략을 추가한다.
+5. `/content/[slug]`와 실제 가이드 글 초안을 붙인다.
+6. `Snake Survivor` MVP를 시작한다.
+7. `Brick Shot Rush` MVP를 이어서 구현한다.
+8. Vercel preview 배포와 SEO/OG 점검을 진행한다.
 
 ## 17. 기획 검토 결과
 
