@@ -3,8 +3,8 @@
 ## 1. 프로젝트 개요
 
 ### 프로젝트 목표
-- `React + TypeScript + Next.js + Tailwind CSS` 기반으로 고전 게임 웹 서비스를 만든다.
-- 초기 버전에서는 고전 게임 3종을 `/game` 라우트 하위에서 서비스한다.
+- `React + TypeScript + Next.js + Tailwind CSS` 기반으로 레트로 감성의 현대식 캐주얼 게임 웹 서비스를 만든다.
+- 초기 버전에서는 고전 문법을 현대적으로 재해석한 게임 3종을 `/game` 라우트 하위에서 서비스한다.
 - 각 게임은 플레이 후 점수를 등록할 수 있으며, 점수 등록 이름은 `영문 3글자`까지만 허용한다.
 - 백엔드는 `Supabase`를 사용하여 점수 저장과 랭킹 조회를 처리한다.
 - 배포는 `Vercel`을 사용한다.
@@ -36,21 +36,26 @@
 
 ## 3. 게임 선정안
 
-초기 3개 게임은 구현 난이도와 대중성을 고려하여 아래처럼 가정한다.
+초기 3개 게임은 최신 브라우저/캐주얼 트렌드, 모바일 적합성, 구현 난이도, 점수 경쟁성을 함께 고려하여 아래처럼 확정한다.
 
-1. `Block Puzzle (Tetris-like, 가칭)`
-2. `Snake`
-3. `Breakout`
+1. `Block Jam Blitz`
+2. `Snake Survivor`
+3. `Brick Shot Rush`
 
 선정 이유:
-- 규칙이 단순하고 웹에서 구현하기 좋다.
-- 점수 시스템이 자연스럽다.
-- 키보드 조작 중심이라 브라우저 게임 경험에 잘 맞는다.
-- 추후 랭킹 경쟁 요소를 붙이기 쉽다.
+- `Block Jam Blitz`는 모바일 친화적인 배치형 퍼즐로 진입장벽이 낮고 재시도성이 높다.
+- `Snake Survivor`는 고전 스네이크 인지도를 유지하면서도 생존과 강화 선택으로 현대식 액션 흐름에 맞춘다.
+- `Brick Shot Rush`는 클래식 `Breakout`보다 모바일 조작과 물리적 손맛이 좋은 각도 발사형 구조다.
+- 세 게임 모두 짧은 세션, 높은 재도전성, 랭킹 경쟁, 향후 일일 챌린지 확장성이 좋다.
+
+개발 참고 문서:
+- [트렌드 맞춤 3종 추천안](./trend-fit-game-lineup.md)
+- [트렌드 맞춤 게임 상세 기획서](./trend-fit-game-design-briefs.md)
 
 주의 메모:
-- `Tetris`는 상표 및 권리 이슈를 별도로 검토하는 것이 안전하다.
-- 실제 공개 배포 및 수익화를 할 경우, `Block Puzzle`처럼 자체 명칭과 차별화된 비주얼/규칙으로 운영하는 방안도 고려한다.
+- `Block Jam Blitz`는 `Tetris`와 혼동될 정도로 유사한 명칭, 룰, 비주얼을 피한다.
+- 순수 `Breakout` 복각은 보류하고, `Brick Shot Rush`처럼 모바일 우선 구조로 운영한다.
+- 세부 룰, 점수 규칙, MVP 범위는 위 참고 문서를 기준으로 고정한다.
 
 ## 4. 서비스 구조
 
@@ -63,16 +68,16 @@
 - `/game`
   - 게임 3종 목록
   - 썸네일, 설명, 바로 시작 버튼
-- `/game/block-puzzle`
-  - 블록 퍼즐 플레이 화면
+- `/game/block-jam-blitz`
+  - 블록 잼 블리츠 플레이 화면
   - 점수 등록
   - 랭킹 보기
-- `/game/snake`
-  - 스네이크 플레이 화면
+- `/game/snake-survivor`
+  - 스네이크 서바이버 플레이 화면
   - 점수 등록
   - 랭킹 보기
-- `/game/breakout`
-  - 브레이크아웃 플레이 화면
+- `/game/brick-shot-rush`
+  - 브릭 샷 러시 플레이 화면
   - 점수 등록
   - 랭킹 보기
 - `/ranking`
@@ -167,7 +172,7 @@
 
 ### 권장 DB 제약조건
 - `game_slug` 체크 제약조건
-  - 허용값: `block-puzzle`, `snake`, `breakout`
+  - 허용값: `block-jam-blitz`, `snake-survivor`, `brick-shot-rush`
 - `player_name` 체크 제약조건
   - 정규식: 영문 대문자 `1~3글자`
 - `score` 체크 제약조건
@@ -180,7 +185,7 @@
   - 동점 시 정렬 기준 고정
 
 ### 저장 규칙
-- `game_slug`는 `block-puzzle`, `snake`, `breakout` 중 하나
+- `game_slug`는 `block-jam-blitz`, `snake-survivor`, `brick-shot-rush` 중 하나
 - `player_name`은 영문 대문자 1~3글자만 허용
 - `score`는 0 이상 정수
 
@@ -244,7 +249,7 @@
   - rate limit 확인
   - 서버 측 점수 검증
   - Supabase insert
-- `GET /api/scores?game=snake`
+- `GET /api/scores?game=block-jam-blitz`
   - 게임별 Top N 랭킹 조회
   - 정렬 고정
   - 필요 시 캐싱 적용
@@ -332,9 +337,9 @@
 
 ### 함께 넣을 콘텐츠 아이디어
 - 각 게임 공략 글
-- 고전 게임 역사 소개
+- 레트로 문법 해설 글
 - 점수 잘 올리는 팁
-- 키보드 조작 안내
+- 터치 조작 안내
 - 오늘의 추천 게임
 - 유사한 레트로 게임 소개
 - 게임별 난이도 가이드
@@ -343,10 +348,10 @@
 ### 추천 콘텐츠 구조
 - `/content`
   - 리스트 페이지
-- `/content/block-puzzle-tips`
-- `/content/snake-beginner-guide`
-- `/content/breakout-high-score-guide`
-- `/content/history-of-retro-arcade-games`
+- `/content/block-jam-blitz-guide`
+- `/content/snake-survivor-beginner-guide`
+- `/content/brick-shot-rush-combo-guide`
+- `/content/why-retro-inspired-web-games-work`
 
 ### AdSense 관점에서 유의할 점
 - 광고보다 콘텐츠 가치가 먼저 보여야 한다.
@@ -394,6 +399,7 @@
 - 기본 레이아웃 구성
 - 라우트 기본 골격 생성
 - 공통 디자인 토큰 정의
+- 추천안 문서 기준 슬러그와 게임 메타데이터 상수 정의
 - `Phaser`, `Zustand` 설치 및 기본 구조 생성
 
 ### Phase 2. 공통 UI 제작
@@ -402,6 +408,7 @@
 - 공통 헤더/푸터
 - 게임 카드 UI
 - `PhaserGame` 공통 래퍼 컴포넌트 제작
+- `GameLayout`, `HUD`, `PauseModal`, `ResultModal` 공통화
 - `Zustand` 공통 스토어 초안 작성
 
 ### Phase 3. Supabase 연결
@@ -410,29 +417,39 @@
 - Next.js에서 연결 확인
 - 점수 조회/등록 API 초안 작성
 - 기본 rate limit 및 검증 로직 추가
+- 게임별 점수 상한선 검증 규칙 초안 작성
 
 ### Phase 4. 첫 번째 게임 완성
-- `Block Puzzle` 구현
-- 점수 계산
+- `Block Jam Blitz` 구현
+- 8x8 보드와 3개 블록 큐 구현
+- 라인 제거와 콤보 점수 구현
 - 게임 오버 처리
 - 점수 등록 연동
 - 랭킹 노출
-- Phaser Scene 패턴 정리
+- 모바일 드래그 UX 보정
 
 ### Phase 5. 두 번째 게임 완성
-- `Snake` 구현
+- `Snake Survivor` 구현
+- 자동 전진과 방향 전환 구현
+- 먹이, 적, 난이도 상승 구현
+- 퍼크 선택 UI 구현
 - 점수 등록 연동
 - 랭킹 노출
 
 ### Phase 6. 세 번째 게임 완성
-- `Breakout` 구현
+- `Brick Shot Rush` 구현
+- 조준선과 발사 루프 구현
+- 하강 브릭과 픽업 아이템 구현
+- 특수 브릭 1종 구현
 - 점수 등록 연동
 - 랭킹 노출
 
 ### Phase 7. 랭킹/콘텐츠 확장
 - `/ranking` 페이지 구성
 - `/content` 목록 및 상세 작성
+- 게임별 가이드 글 최소 3개 작성
 - 내부 링크 구조 정리
+- `오늘`, `주간`, `전체` 랭킹 확장 포인트 정리
 
 ### Phase 8. 수익화 준비
 - AdSense 삽입 위치 결정
@@ -450,8 +467,11 @@
 
 ### 문서/설계
 - [x] 프로젝트 기획서 작성
-- [ ] 게임 3종 최종 확정
+- [x] 트렌드 맞춤 3종 추천안 작성
+- [x] 게임별 상세 기획 문서 작성
+- [ ] 게임 3종 슬러그 및 점수 규칙 최종 확정
 - [ ] 페이지 구조 확정
+- [ ] 공통 HUD 및 입력 패턴 정리
 - [ ] 디자인 톤앤매너 정리
 
 ### 프론트엔드
@@ -463,16 +483,18 @@
 - [ ] 공통 레이아웃 제작
 - [ ] 홈 페이지 제작
 - [ ] 게임 목록 페이지 제작
+- [ ] 게임 공통 HUD/모달 제작
 
 ### 게임 개발
-- [ ] 블록 퍼즐 구현
-- [ ] 스네이크 구현
-- [ ] 브레이크아웃 구현
+- [ ] `Block Jam Blitz` MVP 구현
+- [ ] `Snake Survivor` MVP 구현
+- [ ] `Brick Shot Rush` MVP 구현
 - [ ] 점수 시스템 공통화
+- [ ] 게임별 검증 규칙 정의
 
 ### 백엔드
 - [ ] Supabase 프로젝트 생성
-- [ ] 테이블 생성
+- [ ] `high_scores` 테이블 및 slug 제약조건 생성
 - [ ] 점수 저장 API 작성
 - [ ] 랭킹 조회 API 작성
 - [ ] 입력 검증 추가
@@ -496,18 +518,20 @@
 ## 15. 현재 기준 권장 결정사항
 
 ### 우선 확정 추천
-- 게임 3종: `Snake`, `Breakout`, `Block Puzzle(가칭)`
+- 게임 3종: `Block Jam Blitz`, `Snake Survivor`, `Brick Shot Rush`
+- 1차 MVP: `Block Jam Blitz`
 - 라우팅: `/game/[slug]`
 - 점수 저장 방식: `Next.js Route Handler + Supabase`
 - 게임 엔진: `Phaser`
 - 상태 관리: `Zustand`
-- 1차 콘텐츠 섹션: `공략 글 + 레트로 게임 소개 글`
+- 참고 문서: `docs/trend-fit-game-lineup.md`, `docs/trend-fit-game-design-briefs.md`
+- 1차 콘텐츠 섹션: `공략 글 + 레트로 감성 해설 글`
 - 배포: `Vercel`
 
 ### 이유
-- 구현 범위가 과도하게 커지지 않는다.
-- 초보자 기준으로 구조 이해가 쉽다.
-- 추후 기능 확장이 자연스럽다.
+- 모바일 우선 조작과 짧은 세션 구조에 더 잘 맞는다.
+- 첫 MVP를 퍼즐 장르로 안정적으로 완성하기 좋다.
+- 이후 액션과 물리형 게임으로 확장해 포털 구성이 자연스러워진다.
 
 ## 16. 다음 작업 제안
 
@@ -516,11 +540,13 @@
 1. Next.js 프로젝트 생성
 2. Tailwind CSS 적용
 3. App Router 기본 구조 생성
-4. `/`, `/game`, `/game/[slug]` 페이지 골격 생성
-5. Supabase 연동 준비
-6. `Snake`부터 구현 시작
-7. 점수 저장/조회 검증
-8. 두 번째, 세 번째 게임 확장
+4. `docs/trend-fit-game-design-briefs.md` 기준으로 게임 메타데이터와 슬러그 상수 정의
+5. `/`, `/game`, `/game/[slug]` 페이지 골격 생성
+6. Supabase 연동 준비
+7. 공통 HUD, 결과 모달, 점수 저장/조회 구조 구현
+8. `Block Jam Blitz`부터 구현 시작
+9. 점수 저장/조회 검증
+10. `Snake Survivor`, `Brick Shot Rush` 순서로 확장
 
 ## 17. 기획 검토 결과
 
@@ -532,18 +558,18 @@
 ### 꼭 먼저 반영해야 할 사항
 - 게임 3개 동시 개발보다 `게임 1개 완성 -> 공통 시스템 정리 -> 나머지 확장` 순서가 안전하다.
 - 점수 저장은 단순 입력 검증만으로 끝나지 않으며, 스팸 제출과 임의 점수 조작을 최소한으로 막아야 한다.
-- `Tetris` 명칭과 구성은 공개 서비스 및 광고 수익화 시 권리 이슈를 점검하는 편이 안전하다.
+- `Block Jam Blitz`는 `Tetris`와 혼동되지 않는 자체 규칙과 명칭을 유지해야 한다.
 - 광고는 게임 조작 UI와 충분히 떨어져 있어야 하며, accidental click 구조가 되지 않도록 설계해야 한다.
 
 ### 권장 MVP 재정의
 - 1차 공개 범위는 아래처럼 더 좁게 잡는 것을 권장한다.
   - 홈 페이지
   - `/game`
-  - `Snake` 1종
+  - `Block Jam Blitz` 1종
   - 점수 등록/랭킹
   - 콘텐츠 글 3~5개
   - 정책 페이지
-- 이후 안정화되면 `Breakout`, `Block Puzzle`을 추가한다.
+- 이후 안정화되면 `Snake Survivor`, `Brick Shot Rush`를 추가한다.
 
 ## 18. 게임 개발 기술 선택 가이드
 
@@ -565,7 +591,7 @@
 장점:
 - 씬, 입력, 사운드, 애니메이션 구조를 일관되게 가져갈 수 있다.
 - 게임이 늘어나도 공통 패턴을 유지하기 쉽다.
-- `Snake`, `Breakout`, `Block Puzzle` 모두에 잘 맞는다.
+- `Block Jam Blitz`, `Snake Survivor`, `Brick Shot Rush` 모두에 잘 맞는다.
 - React와 게임 엔진의 역할 분리가 분명해진다.
 
 단점:
