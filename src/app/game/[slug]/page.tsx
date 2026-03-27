@@ -47,8 +47,11 @@ export default async function GameDetailPage(props: GameDetailPageProps) {
   const game = getGameMetadata(slug);
 
   return (
-    <div className="mx-auto flex max-w-6xl flex-col gap-8 px-4 py-10 sm:px-6 lg:px-8 lg:py-14">
-      <div className="space-y-3">
+    <div
+      id="game-detail-page"
+      className="mx-auto flex max-w-6xl flex-col gap-8 px-4 py-10 sm:px-6 lg:px-8 lg:py-14"
+    >
+      <div id="game-page-hero" className="space-y-3">
         <p className="text-sm font-semibold uppercase tracking-[0.22em] text-[color:var(--color-accent-strong)]">
           {game.category}
         </p>
@@ -58,7 +61,9 @@ export default async function GameDetailPage(props: GameDetailPageProps) {
         </p>
       </div>
 
-      <GameShell game={game} />
+      <div id="game-page-shell">
+        <GameShell game={game} />
+      </div>
     </div>
   );
 }

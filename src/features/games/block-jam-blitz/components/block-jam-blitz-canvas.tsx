@@ -3,27 +3,80 @@
 import { useEffect, useEffectEvent, useRef, useState } from 'react';
 import type { Game } from 'phaser';
 
-import type { BlockJamSnapshot } from '@/features/games/block-jam-blitz/types';
+import type {
+  BlockJamAutomationScenario,
+  BlockJamAutomationState,
+  BlockJamSceneController,
+  BlockJamSnapshot,
+} from '@/features/games/block-jam-blitz/types';
 
 interface BlockJamBlitzCanvasProps {
   sessionKey: number;
   isPaused: boolean;
+  isAutomationMode: boolean;
   onSnapshot: (snapshot: BlockJamSnapshot) => void;
 }
 
 export function BlockJamBlitzCanvas({
   sessionKey,
   isPaused,
+  isAutomationMode,
   onSnapshot,
 }: BlockJamBlitzCanvasProps) {
   const mountRef = useRef<HTMLDivElement | null>(null);
+  const controllerRef = useRef<BlockJamSceneController | null>(null);
+  const latestSnapshotRef = useRef<BlockJamSnapshot | null>(null);
+  const isPausedRef = useRef(isPaused);
   const [bootError, setBootError] = useState<string | null>(null);
   const handleSnapshot = useEffectEvent(onSnapshot);
+
+  useEffect(() => {
+    isPausedRef.current = isPaused;
+  }, [isPaused]);
 
   useEffect(() => {
     let isDisposed = false;
     let gameInstance: Game | null = null;
     const mountNode = mountRef.current;
+
+    function getAutomationParams(): {
+      automationEnabled: boolean;
+      automationScenario: BlockJamAutomationScenario;
+    } {
+      if (typeof window === 'undefined') {
+        return {
+          automationEnabled: false,
+          automationScenario: 'default',
+        };
+      }
+
+      const searchParams = new URL(window.location.href).searchParams;
+      const automationEnabled = searchParams.get('automation') === '1';
+      const scenario = searchParams.get('scenario');
+
+      if (
+        scenario === 'start' ||
+        scenario === 'midgame' ||
+        scenario === 'game-over'
+      ) {
+        return {
+          automationEnabled,
+          automationScenario: scenario,
+        };
+      }
+
+      return {
+        automationEnabled,
+        automationScenario: automationEnabled ? 'start' : 'default',
+      };
+    }
+
+    function serializeAutomationState(state: BlockJamAutomationState) {
+      return JSON.stringify({
+        ...state,
+        mode: isPausedRef.current ? 'paused' : state.mode,
+      });
+    }
 
     async function mountGame() {
       if (!mountNode) {
@@ -40,11 +93,45 @@ export function BlockJamBlitzCanvas({
           return;
         }
 
+        const automationParams = getAutomationParams();
         const scene = createBlockJamBlitzScene(Phaser, {
           onSnapshot: (snapshot) => {
+            latestSnapshotRef.current = snapshot;
             handleSnapshot(snapshot);
           },
-        });
+        }, automationParams);
+        controllerRef.current = scene;
+
+        const renderHook = () => {
+          const controller = controllerRef.current;
+
+          if (!controller) {
+            return JSON.stringify({
+              schemaVersion: 1,
+              game: 'block-jam-blitz',
+              mode: 'running',
+              statusMessage: 'Scene controller not ready yet.',
+            });
+          }
+
+          return serializeAutomationState(controller.getAutomationState());
+        };
+
+        const advanceHook = (ms: number) => {
+          const controller = controllerRef.current;
+
+          if (!controller) {
+            return;
+          }
+
+          controller.advanceTime(ms);
+          const snapshot = controller.getSnapshot();
+          latestSnapshotRef.current = snapshot;
+          handleSnapshot(snapshot);
+        };
+
+        window.render_game_to_text = renderHook;
+        window.advanceTime = advanceHook;
 
         gameInstance = new Phaser.Game({
           type: Phaser.AUTO,
@@ -70,6 +157,16 @@ export function BlockJamBlitzCanvas({
 
     return () => {
       isDisposed = true;
+      controllerRef.current = null;
+
+      if (window.render_game_to_text) {
+        delete window.render_game_to_text;
+      }
+
+      if (window.advanceTime) {
+        delete window.advanceTime;
+      }
+
       gameInstance?.destroy(true);
 
       if (mountNode) {
@@ -82,7 +179,16 @@ export function BlockJamBlitzCanvas({
     <div className="relative">
       <div
         ref={mountRef}
-        className="mx-auto aspect-[13/19] w-full max-w-[560px] overflow-hidden rounded-[28px] bg-[color:var(--color-background-soft)]"
+        id="block-jam-blitz-surface"
+        data-testid="block-jam-blitz-surface"
+        tabIndex={0}
+        role="application"
+        aria-label="Block Jam Blitz game board"
+        className={`mx-auto aspect-[13/19] w-full max-w-[560px] overflow-hidden rounded-[28px] bg-[color:var(--color-background-soft)] ${
+          isAutomationMode
+            ? 'ring-1 ring-black/8 shadow-[0_28px_80px_rgba(15,23,42,0.14)]'
+            : ''
+        }`}
       />
 
       {isPaused ? (

@@ -8,7 +8,9 @@
     "start": "next start",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test:block-jam:loop": "node scripts/run-block-jam-dev-loop.mjs",
+    "test:block-jam:loop:headed": "node scripts/run-block-jam-dev-loop.mjs --headed"
   },
   "dependencies": {
     "@supabase/ssr": "^0.9.0",
@@ -27,6 +29,7 @@
     "@types/react-dom": "^19.0.0",
     "eslint": "^9.0.0",
     "eslint-config-next": "^16.0.0",
+    "playwright": "^1.58.2",
     "postcss": "^8.5.0",
     "tailwindcss": "^4.2.0",
     "typescript": "^5.9.0"

@@ -11,7 +11,10 @@ const navItems = [
 
 export function SiteHeader() {
   return (
-    <header className="sticky top-0 z-40 border-b border-black/10 bg-[color:var(--color-panel)]/90 backdrop-blur">
+    <header
+      id="site-header"
+      className="sticky top-0 z-40 border-b border-black/10 bg-[color:var(--color-panel)]/90 backdrop-blur"
+    >
       <div className="mx-auto flex max-w-6xl items-center justify-between gap-6 px-4 py-4 sm:px-6 lg:px-8">
         <Link href={APP_ROUTES.home} className="flex items-center gap-3">
           <span className="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-[color:var(--color-accent)] text-sm font-semibold text-[color:var(--color-panel)]">

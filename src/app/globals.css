@@ -30,6 +30,33 @@ body {
   font-family: var(--font-body), "Noto Sans KR", sans-serif;
 }
 
+body[data-game-automation="block-jam-blitz"] {
+  background:
+    radial-gradient(circle at top, rgba(23, 201, 178, 0.12), transparent 30%),
+    linear-gradient(180deg, #fffef9 0%, #f5efe1 100%);
+}
+
+body[data-game-automation="block-jam-blitz"] #site-header,
+body[data-game-automation="block-jam-blitz"] #site-footer,
+body[data-game-automation="block-jam-blitz"] #game-page-hero {
+  display: none;
+}
+
+body[data-game-automation="block-jam-blitz"] #site-main {
+  min-height: 100vh;
+}
+
+body[data-game-automation="block-jam-blitz"] #game-detail-page {
+  max-width: 960px;
+  gap: 0;
+  padding-top: 24px;
+  padding-bottom: 24px;
+}
+
+body[data-game-automation="block-jam-blitz"] #game-page-shell {
+  width: 100%;
+}
+
 a {
   color: inherit;
   text-decoration: none;

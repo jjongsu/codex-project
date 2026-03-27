@@ -7,12 +7,17 @@ import {
   QUEUE_LAYOUT,
   SCENE_SIZE,
   createInitialQueue,
+  createQueuePieceFromShapeId,
   createRandomQueuePiece,
   hexToNumber,
   toQueuePreview,
 } from '@/features/games/block-jam-blitz/config';
 import type {
+  BlockJamAutomationScenario,
+  BlockJamAutomationState,
   BlockJamQueuePiece,
+  BlockJamSceneController,
+  BlockJamSelectionState,
   BlockJamSnapshot,
 } from '@/features/games/block-jam-blitz/types';
 
@@ -20,6 +25,11 @@ type PhaserModule = typeof PhaserModuleType;
 
 interface BlockJamSceneCallbacks {
   onSnapshot: (snapshot: BlockJamSnapshot) => void;
+}
+
+interface BlockJamSceneOptions {
+  automationEnabled?: boolean;
+  automationScenario?: BlockJamAutomationScenario;
 }
 
 interface DragState {
@@ -36,21 +46,87 @@ interface DragState {
 
 type BoardState = Array<Array<string | null>>;
 
+const AUTOMATION_QUEUE_SEQUENCE = [
+  'square-2',
+  'bar-3-h',
+  'dot',
+  'bar-3-v',
+  'l-3',
+  'bar-4-h',
+  't-4',
+  'square-2',
+] as const;
+
 function createBoard(): BoardState {
   return Array.from({ length: BOARD_SIZE }, () =>
     Array.from({ length: BOARD_SIZE }, () => null),
   );
 }
 
-function getSessionDurationMs(startedAt: number, endedAt: number | null): number {
-  return Math.max(0, (endedAt ?? Date.now()) - startedAt);
+function setBoardCells(
+  board: BoardState,
+  cells: Array<{ row: number; col: number; color: string }>,
+) {
+  cells.forEach(({ row, col, color }) => {
+    board[row][col] = color;
+  });
+}
+
+function createMidgameBoard(): BoardState {
+  const board = createBoard();
+
+  setBoardCells(board, [
+    { row: 0, col: 0, color: '#17c9b2' },
+    { row: 0, col: 1, color: '#17c9b2' },
+    { row: 0, col: 2, color: '#17c9b2' },
+    { row: 0, col: 3, color: '#17c9b2' },
+    { row: 0, col: 4, color: '#17c9b2' },
+    { row: 3, col: 2, color: '#0ea5e9' },
+    { row: 3, col: 3, color: '#facc15' },
+    { row: 4, col: 2, color: '#0ea5e9' },
+    { row: 5, col: 5, color: '#f43f5e' },
+  ]);
+
+  return board;
+}
+
+function createGameOverBoard(): BoardState {
+  const board = createBoard();
+
+  for (let row = 0; row < BOARD_SIZE; row += 1) {
+    for (let col = 0; col < BOARD_SIZE; col += 1) {
+      if ((row + col) % 2 === 0) {
+        board[row][col] = '#ff9b54';
+      }
+    }
+  }
+
+  return board;
+}
+
+function isTextInputFocused() {
+  if (typeof document === 'undefined') {
+    return false;
+  }
+
+  const activeElement = document.activeElement;
+
+  return (
+    activeElement instanceof HTMLInputElement ||
+    activeElement instanceof HTMLTextAreaElement ||
+    activeElement instanceof HTMLSelectElement
+  );
 }
 
 export function createBlockJamBlitzScene(
   Phaser: PhaserModule,
   callbacks: BlockJamSceneCallbacks,
-) {
-  return new (class BlockJamBlitzScene extends Phaser.Scene {
+  options: BlockJamSceneOptions = {},
+): PhaserModuleType.Scene & BlockJamSceneController {
+  return new (class BlockJamBlitzScene
+    extends Phaser.Scene
+    implements BlockJamSceneController
+  {
     private board: BoardState = createBoard();
 
     private boardGraphics!: any;
@@ -73,34 +149,272 @@ export function createBlockJamBlitzScene(
 
     private isGameOver = false;
 
-    private startedAt = Date.now();
-
-    private endedAt: number | null = null;
-
     private statusMessage = 'Drag one of the three blocks onto the board.';
 
-    private queue = createInitialQueue();
+    private queue: BlockJamQueuePiece[] = [];
 
     private dragState: DragState | null = null;
+
+    private selectedPieceIndex = 0;
+
+    private cursorRow = 0;
+
+    private cursorCol = 0;
+
+    private sessionDurationMs = 0;
+
+    private lastClockSampleAt = 0;
+
+    private automationEnabled = options.automationEnabled ?? false;
+
+    private automationScenario = options.automationScenario ?? 'default';
+
+    private automationSequenceIndex = 0;
+
+    private lastDragFeedbackKey = '';
 
     constructor() {
       super('block-jam-blitz');
     }
 
     create() {
-      this.boardGraphics = this.add.graphics();
-      this.ghostGraphics = this.add.graphics();
-
       this.drawBackdrop();
-      this.drawBoard();
+      this.boardGraphics = this.add.graphics();
+      this.boardGraphics.setDepth(1);
+      this.ghostGraphics = this.add.graphics();
+      this.ghostGraphics.setDepth(2);
+      this.lastClockSampleAt = Date.now();
       this.buildQueueArea();
-      this.rebuildQueueDisplays();
       this.registerInput();
+      this.registerKeyboardControls();
+      this.loadScenario(
+        this.automationEnabled ? this.automationScenario : 'default',
+      );
+    }
+
+    getSnapshot() {
+      this.syncClockWithRealtime();
+
+      return {
+        score: this.score,
+        combo: this.combo,
+        linesCleared: this.linesCleared,
+        moveCount: this.moveCount,
+        sessionDurationMs: this.sessionDurationMs,
+        queue: this.queue.map(toQueuePreview),
+        isGameOver: this.isGameOver,
+        lastClearCount: this.lastClearCount,
+        statusMessage: this.statusMessage,
+        selection: this.getSelectionState(),
+      };
+    }
+
+    private getSelectionState(): BlockJamSelectionState | null {
+      if (this.isGameOver) {
+        return null;
+      }
+
+      if (this.dragState) {
+        return {
+          pieceIndex: this.dragState.pieceIndex,
+          pieceName: this.dragState.piece.name,
+          row: this.dragState.candidateRow ?? this.cursorRow,
+          col: this.dragState.candidateCol ?? this.cursorCol,
+          valid: this.dragState.valid,
+          inputMode: 'drag',
+        };
+      }
+
+      const selectedPiece = this.queue[this.selectedPieceIndex];
+
+      if (!selectedPiece) {
+        return null;
+      }
+
+      return {
+        pieceIndex: this.selectedPieceIndex,
+        pieceName: selectedPiece.name,
+        row: this.cursorRow,
+        col: this.cursorCol,
+        valid: this.canPlacePiece(selectedPiece, this.cursorRow, this.cursorCol),
+        inputMode: 'cursor',
+      };
+    }
+
+    getAutomationState(): BlockJamAutomationState {
+      const selectedPiece = this.queue[this.selectedPieceIndex];
+      const cursorValid = selectedPiece
+        ? this.canPlacePiece(selectedPiece, this.cursorRow, this.cursorCol)
+        : false;
+
+      return {
+        schemaVersion: 1,
+        game: 'block-jam-blitz',
+        scenario: this.automationScenario,
+        mode: this.isGameOver ? 'game-over' : 'running',
+        coordinateSystem: {
+          origin: 'top-left',
+          rowAxis: 'down',
+          colAxis: 'right',
+          boardSize: BOARD_SIZE,
+          cellUnit: 'board-cell',
+        },
+        score: this.score,
+        combo: this.combo,
+        linesCleared: this.linesCleared,
+        moveCount: this.moveCount,
+        sessionDurationMs: this.sessionDurationMs,
+        statusMessage: this.statusMessage,
+        board: this.board.map((row) =>
+          row.map((cell) => (cell ? 'X' : '.')).join(''),
+        ),
+        queue: this.queue.map((piece, index) => ({
+          index,
+          token: piece.token,
+          id: piece.id,
+          name: piece.name,
+          color: piece.color,
+          width: piece.width,
+          height: piece.height,
+          cells: piece.cells.map((cell) => ({ ...cell })),
+        })),
+        availablePlacements: this.queue.map((piece, pieceIndex) => ({
+          pieceIndex,
+          count: this.countAvailablePlacements(piece),
+        })),
+        cursor: selectedPiece
+          ? {
+              row: this.cursorRow,
+              col: this.cursorCol,
+              pieceIndex: this.selectedPieceIndex,
+              pieceName: selectedPiece.name,
+              valid: cursorValid,
+            }
+          : null,
+        drag: this.dragState
+          ? {
+              pieceIndex: this.dragState.pieceIndex,
+              pieceName: this.dragState.piece.name,
+              row: this.dragState.candidateRow,
+              col: this.dragState.candidateCol,
+              valid: this.dragState.valid,
+            }
+          : null,
+        isGameOver: this.isGameOver,
+      };
+    }
+
+    advanceTime(ms: number) {
+      this.syncClockWithRealtime();
+
+      if (!this.isGameOver) {
+        this.sessionDurationMs += Math.max(0, Math.trunc(ms));
+      }
+
+      this.lastClockSampleAt = Date.now();
       this.emitSnapshot();
+    }
+
+    private syncClockWithRealtime() {
+      if (this.isGameOver) {
+        return;
+      }
+
+      const now = Date.now();
+      this.sessionDurationMs += Math.max(0, now - this.lastClockSampleAt);
+      this.lastClockSampleAt = now;
+    }
+
+    private loadScenario(scenario: BlockJamAutomationScenario) {
+      this.board = createBoard();
+      this.queue = [];
+      this.score = 0;
+      this.combo = 0;
+      this.linesCleared = 0;
+      this.moveCount = 0;
+      this.lastClearCount = 0;
+      this.isGameOver = false;
+      this.dragState = null;
+      this.selectedPieceIndex = 0;
+      this.cursorRow = 0;
+      this.cursorCol = 0;
+      this.sessionDurationMs = 0;
+      this.lastClockSampleAt = Date.now();
+      this.automationSequenceIndex = 0;
+      this.automationScenario = scenario;
+      this.lastDragFeedbackKey = '';
+
+      if (scenario === 'midgame') {
+        this.board = createMidgameBoard();
+        this.queue = [
+          createQueuePieceFromShapeId('bar-3-h'),
+          createQueuePieceFromShapeId('square-2'),
+          createQueuePieceFromShapeId('dot'),
+        ];
+        this.score = 264;
+        this.combo = 1;
+        this.linesCleared = 1;
+        this.moveCount = 4;
+        this.sessionDurationMs = 18000;
+        this.cursorRow = 0;
+        this.cursorCol = 5;
+        this.statusMessage = 'Automation scenario ready. Press Enter to clear row 0.';
+      } else if (scenario === 'game-over') {
+        this.board = createGameOverBoard();
+        this.queue = [
+          createQueuePieceFromShapeId('square-2'),
+          createQueuePieceFromShapeId('bar-3-h'),
+          createQueuePieceFromShapeId('bar-3-v'),
+        ];
+        this.score = 612;
+        this.combo = 0;
+        this.linesCleared = 4;
+        this.moveCount = 9;
+        this.sessionDurationMs = 46000;
+        this.isGameOver = true;
+        this.statusMessage = 'No valid placements left. Submit your score.';
+      } else if (scenario === 'start') {
+        this.queue = [
+          createQueuePieceFromShapeId('square-2'),
+          createQueuePieceFromShapeId('bar-3-h'),
+          createQueuePieceFromShapeId('dot'),
+        ];
+        this.statusMessage = 'Automation start scenario ready.';
+      } else {
+        this.queue = this.automationEnabled
+          ? [
+              createQueuePieceFromShapeId('square-2'),
+              createQueuePieceFromShapeId('bar-3-h'),
+              createQueuePieceFromShapeId('dot'),
+            ]
+          : createInitialQueue();
+        this.statusMessage = 'Drag one of the three blocks onto the board.';
+      }
+
+      this.drawBoard();
+      this.redrawQueueSlotBackgrounds();
+      this.rebuildQueueDisplays();
+      this.updateKeyboardGhost();
+      this.emitSnapshot();
+    }
+
+    private getNextQueuePiece() {
+      if (!this.automationEnabled) {
+        return createRandomQueuePiece();
+      }
+
+      const shapeId =
+        AUTOMATION_QUEUE_SEQUENCE[
+          this.automationSequenceIndex % AUTOMATION_QUEUE_SEQUENCE.length
+        ];
+      this.automationSequenceIndex += 1;
+
+      return createQueuePieceFromShapeId(shapeId);
     }
 
     private drawBackdrop() {
       const backdrop = this.add.graphics();
+      backdrop.setDepth(-20);
       backdrop.fillStyle(0xfffcf5, 1);
       backdrop.fillRoundedRect(14, 14, SCENE_SIZE.width - 28, SCENE_SIZE.height - 28, 32);
       backdrop.lineStyle(2, 0xf1e8d8, 1);
@@ -130,8 +444,16 @@ export function createBlockJamBlitzScene(
     private drawBoard() {
       this.boardGraphics.clear();
 
-      this.boardGraphics.fillStyle(0xf8f1e4, 1);
+      this.boardGraphics.fillStyle(0xe7d8bd, 1);
       this.boardGraphics.fillRoundedRect(
+        BOARD_ORIGIN.x - 12,
+        BOARD_ORIGIN.y - 12,
+        BOARD_SIZE * BOARD_CELL_SIZE + 24,
+        BOARD_SIZE * BOARD_CELL_SIZE + 24,
+        28,
+      );
+      this.boardGraphics.lineStyle(3, 0xc4b18e, 0.95);
+      this.boardGraphics.strokeRoundedRect(
         BOARD_ORIGIN.x - 12,
         BOARD_ORIGIN.y - 12,
         BOARD_SIZE * BOARD_CELL_SIZE + 24,
@@ -146,7 +468,7 @@ export function createBlockJamBlitzScene(
           const cellColor = this.board[row][col];
 
           this.boardGraphics.fillStyle(
-            cellColor ? hexToNumber(cellColor) : 0xfffdf7,
+            cellColor ? hexToNumber(cellColor) : 0xf9efd9,
             cellColor ? 0.95 : 1,
           );
           this.boardGraphics.fillRoundedRect(
@@ -156,7 +478,11 @@ export function createBlockJamBlitzScene(
             BOARD_CELL_SIZE - 4,
             12,
           );
-          this.boardGraphics.lineStyle(1, 0xe5dccb, 1);
+          this.boardGraphics.lineStyle(
+            cellColor ? 2 : 2,
+            cellColor ? 0xfffcf7 : 0xcdb892,
+            1,
+          );
           this.boardGraphics.strokeRoundedRect(
             x + 2,
             y + 2,
@@ -173,18 +499,35 @@ export function createBlockJamBlitzScene(
         const x = QUEUE_LAYOUT.x + index * (QUEUE_LAYOUT.slotWidth + QUEUE_LAYOUT.gap);
         const y = QUEUE_LAYOUT.y;
         const graphics = this.add.graphics();
-        graphics.fillStyle(0xfff8ea, 1);
-        graphics.fillRoundedRect(x, y, QUEUE_LAYOUT.slotWidth, QUEUE_LAYOUT.slotHeight, 24);
-        graphics.lineStyle(1, 0xe9dcc4, 1);
-        graphics.strokeRoundedRect(x, y, QUEUE_LAYOUT.slotWidth, QUEUE_LAYOUT.slotHeight, 24);
+        graphics.setDepth(4);
         this.queueSlotBackgrounds.push(graphics);
       }
 
-      this.add.text(36, QUEUE_LAYOUT.y - 28, 'Queue', {
+      const queueLabel = this.add.text(36, QUEUE_LAYOUT.y - 28, 'Queue', {
         fontFamily: 'Arial, Helvetica, sans-serif',
         fontSize: '14px',
         color: '#5d5242',
         fontStyle: '700',
+      });
+      queueLabel.setDepth(5);
+      this.redrawQueueSlotBackgrounds();
+    }
+
+    private redrawQueueSlotBackgrounds() {
+      this.queueSlotBackgrounds.forEach((graphics, index) => {
+        const x = QUEUE_LAYOUT.x + index * (QUEUE_LAYOUT.slotWidth + QUEUE_LAYOUT.gap);
+        const y = QUEUE_LAYOUT.y;
+        const isSelected = index === this.selectedPieceIndex && !this.isGameOver;
+
+        graphics.clear();
+        graphics.fillStyle(isSelected ? 0xe9fffb : 0xfff8ea, 1);
+        graphics.fillRoundedRect(x, y, QUEUE_LAYOUT.slotWidth, QUEUE_LAYOUT.slotHeight, 24);
+        graphics.lineStyle(
+          isSelected ? 3 : 1,
+          isSelected ? 0x17c9b2 : 0xe9dcc4,
+          1,
+        );
+        graphics.strokeRoundedRect(x, y, QUEUE_LAYOUT.slotWidth, QUEUE_LAYOUT.slotHeight, 24);
       });
     }
 
@@ -242,6 +585,7 @@ export function createBlockJamBlitzScene(
       interactive: boolean,
     ) {
       const container = this.add.container(x, y);
+      container.setDepth(interactive ? 6 : 3);
 
       piece.cells.forEach((cell) => {
         const rect = this.add.rectangle(
@@ -277,6 +621,119 @@ export function createBlockJamBlitzScene(
       this.input.on('pointerupoutside', this.handlePointerUp, this);
     }
 
+    private registerKeyboardControls() {
+      const keyboard = this.input.keyboard;
+
+      if (!keyboard) {
+        return;
+      }
+
+      keyboard.on('keydown-LEFT', () => {
+        if (this.shouldIgnoreKeyboardInput()) {
+          return;
+        }
+
+        this.moveCursor(0, -1);
+      });
+      keyboard.on('keydown-RIGHT', () => {
+        if (this.shouldIgnoreKeyboardInput()) {
+          return;
+        }
+
+        this.moveCursor(0, 1);
+      });
+      keyboard.on('keydown-UP', () => {
+        if (this.shouldIgnoreKeyboardInput()) {
+          return;
+        }
+
+        this.moveCursor(-1, 0);
+      });
+      keyboard.on('keydown-DOWN', () => {
+        if (this.shouldIgnoreKeyboardInput()) {
+          return;
+        }
+
+        this.moveCursor(1, 0);
+      });
+      keyboard.on('keydown-A', () => {
+        if (this.shouldIgnoreKeyboardInput()) {
+          return;
+        }
+
+        this.stepSelectedPiece(-1);
+      });
+      keyboard.on('keydown-B', () => {
+        if (this.shouldIgnoreKeyboardInput()) {
+          return;
+        }
+
+        this.stepSelectedPiece(1);
+      });
+      keyboard.on('keydown-ENTER', () => {
+        if (this.shouldIgnoreKeyboardInput()) {
+          return;
+        }
+
+        this.placeSelectedPieceAtCursor();
+      });
+      keyboard.on('keydown-SPACE', () => {
+        if (this.shouldIgnoreKeyboardInput()) {
+          return;
+        }
+
+        this.placeSelectedPieceAtCursor();
+      });
+    }
+
+    private shouldIgnoreKeyboardInput() {
+      return this.dragState !== null || this.isGameOver || isTextInputFocused();
+    }
+
+    private moveCursor(rowDelta: number, colDelta: number) {
+      this.cursorRow = Phaser.Math.Clamp(this.cursorRow + rowDelta, 0, BOARD_SIZE - 1);
+      this.cursorCol = Phaser.Math.Clamp(this.cursorCol + colDelta, 0, BOARD_SIZE - 1);
+      this.statusMessage = `Cursor at row ${this.cursorRow + 1}, col ${this.cursorCol + 1}.`;
+      this.redrawQueueSlotBackgrounds();
+      this.updateKeyboardGhost();
+      this.emitSnapshot();
+    }
+
+    private stepSelectedPiece(direction: number) {
+      if (this.queue.length === 0) {
+        return;
+      }
+
+      this.selectedPieceIndex =
+        (this.selectedPieceIndex + direction + this.queue.length) % this.queue.length;
+      this.statusMessage = `Selected ${this.queue[this.selectedPieceIndex].name}.`;
+      this.redrawQueueSlotBackgrounds();
+      this.updateKeyboardGhost();
+      this.emitSnapshot();
+    }
+
+    private placeSelectedPieceAtCursor() {
+      const piece = this.queue[this.selectedPieceIndex];
+
+      if (!piece) {
+        return;
+      }
+
+      if (!this.canPlacePiece(piece, this.cursorRow, this.cursorCol)) {
+        this.statusMessage = 'Selected piece does not fit at the cursor.';
+        this.updateKeyboardGhost();
+        this.emitSnapshot();
+        return;
+      }
+
+      this.placePiece(
+        this.selectedPieceIndex,
+        piece,
+        this.cursorRow,
+        this.cursorCol,
+      );
+    }
+
     private startDrag(
       pieceIndex: number,
       pointer: any,
@@ -287,7 +744,14 @@ export function createBlockJamBlitzScene(
         return;
       }
 
+      this.syncClockWithRealtime();
+      this.selectedPieceIndex = pieceIndex;
       sourceDisplay.setAlpha(0.35);
+      this.redrawQueueSlotBackgrounds();
+
+      const isTouch =
+        pointer?.event?.pointerType === 'touch' || Boolean(pointer?.wasTouch);
+      const verticalAssist = isTouch ? BOARD_CELL_SIZE * 1.2 : 0;
 
       const preview = this.createPieceDisplay(
         piece,
@@ -305,11 +769,15 @@ export function createBlockJamBlitzScene(
         source: sourceDisplay,
         preview,
         offsetX: pointer.x - sourceDisplay.x,
-        offsetY: pointer.y - sourceDisplay.y,
+        offsetY: pointer.y - sourceDisplay.y + verticalAssist,
         candidateRow: null,
         candidateCol: null,
         valid: false,
       };
+      this.lastDragFeedbackKey = '';
+      this.statusMessage = `Dragging ${piece.name}. Release on a highlighted slot.`;
+
+      this.emitSnapshot();
     }
 
     private handlePointerMove(pointer: any) {
@@ -333,6 +801,21 @@ export function createBlockJamBlitzScene(
       this.dragState.valid = valid;
 
       this.drawGhost(candidateRow, candidateCol, this.dragState.piece, valid);
+
+      const feedbackKey = `${candidateRow}:${candidateCol}:${valid}`;
+
+      if (feedbackKey !== this.lastDragFeedbackKey) {
+        if (!Number.isFinite(candidateRow) || !Number.isFinite(candidateCol)) {
+          this.statusMessage = `Dragging ${this.dragState.piece.name}. Move onto the board to preview placement.`;
+        } else if (valid) {
+          this.statusMessage = `Release to place ${this.dragState.piece.name} at row ${candidateRow + 1}, col ${candidateCol + 1}.`;
+        } else {
+          this.statusMessage = `${this.dragState.piece.name} does not fit at row ${candidateRow + 1}, col ${candidateCol + 1}.`;
+        }
+
+        this.lastDragFeedbackKey = feedbackKey;
+        this.emitSnapshot();
+      }
     }
 
     private handlePointerUp() {
@@ -359,12 +842,14 @@ export function createBlockJamBlitzScene(
         this.placePiece(pieceIndex, piece, candidateRow, candidateCol);
       } else {
         source.setAlpha(1);
-        this.statusMessage = 'Placement cancelled. Try another position.';
+        this.statusMessage = `${piece.name} could not be placed there. Try another gap.`;
       }
 
       preview.destroy();
       this.dragState = null;
-      this.clearGhost();
+      this.lastDragFeedbackKey = '';
+      this.redrawQueueSlotBackgrounds();
+      this.updateKeyboardGhost();
       this.emitSnapshot();
     }
 
@@ -406,6 +891,39 @@ export function createBlockJamBlitzScene(
           12,
         );
       });
+
+      const maxX = Math.max(...piece.cells.map((cell) => cell.x));
+      const maxY = Math.max(...piece.cells.map((cell) => cell.y));
+      const outlineX = BOARD_ORIGIN.x + col * BOARD_CELL_SIZE + 2;
+      const outlineY = BOARD_ORIGIN.y + row * BOARD_CELL_SIZE + 2;
+      const outlineWidth = (maxX + 1) * BOARD_CELL_SIZE - 4;
+      const outlineHeight = (maxY + 1) * BOARD_CELL_SIZE - 4;
+
+      this.ghostGraphics.lineStyle(3, valid ? 0x14b8a6 : 0xdc2626, 0.9);
+      this.ghostGraphics.strokeRoundedRect(
+        outlineX,
+        outlineY,
+        outlineWidth,
+        outlineHeight,
+        16,
+      );
+    }
+
+    private updateKeyboardGhost() {
+      if (this.dragState || this.isGameOver) {
+        this.clearGhost();
+        return;
+      }
+
+      const piece = this.queue[this.selectedPieceIndex];
+
+      if (!piece) {
+        this.clearGhost();
+        return;
+      }
+
+      const valid = this.canPlacePiece(piece, this.cursorRow, this.cursorCol);
+      this.drawGhost(this.cursorRow, this.cursorCol, piece, valid);
     }
 
     private canPlacePiece(piece: BlockJamQueuePiece, row: number, col: number) {
@@ -423,12 +941,28 @@ export function createBlockJamBlitzScene(
       });
     }
 
+    private countAvailablePlacements(piece: BlockJamQueuePiece) {
+      let count = 0;
+
+      for (let row = 0; row < BOARD_SIZE; row += 1) {
+        for (let col = 0; col < BOARD_SIZE; col += 1) {
+          if (this.canPlacePiece(piece, row, col)) {
+            count += 1;
+          }
+        }
+      }
+
+      return count;
+    }
+
     private placePiece(
       pieceIndex: number,
       piece: BlockJamQueuePiece,
       row: number,
       col: number,
     ) {
+      this.syncClockWithRealtime();
+
       piece.cells.forEach((cell) => {
         this.board[row + cell.y][col + cell.x] = piece.color;
       });
@@ -456,10 +990,16 @@ export function createBlockJamBlitzScene(
         this.combo = 0;
       }
 
-      this.queue[pieceIndex] = createRandomQueuePiece();
+      this.queue[pieceIndex] = this.getNextQueuePiece();
+      this.selectedPieceIndex = pieceIndex;
+      this.cursorRow = row;
+      this.cursorCol = col;
       this.drawBoard();
       this.rebuildQueueDisplays();
       this.checkGameOver();
+      this.redrawQueueSlotBackgrounds();
+      this.updateKeyboardGhost();
+      this.emitSnapshot();
     }
 
     private getClearedRows() {
@@ -506,36 +1046,18 @@ export function createBlockJamBlitzScene(
       const hasMoves = this.queue.some((piece) => this.hasAvailablePlacement(piece));
 
       if (!hasMoves) {
+        this.syncClockWithRealtime();
         this.isGameOver = true;
-        this.endedAt = Date.now();
         this.statusMessage = 'No valid placements left. Submit your score.';
       }
     }
 
     private hasAvailablePlacement(piece: BlockJamQueuePiece) {
-      for (let row = 0; row < BOARD_SIZE; row += 1) {
-        for (let col = 0; col < BOARD_SIZE; col += 1) {
-          if (this.canPlacePiece(piece, row, col)) {
-            return true;
-          }
-        }
-      }
-
-      return false;
+      return this.countAvailablePlacements(piece) > 0;
     }
 
     private emitSnapshot() {
-      callbacks.onSnapshot({
-        score: this.score,
-        combo: this.combo,
-        linesCleared: this.linesCleared,
-        moveCount: this.moveCount,
-        sessionDurationMs: getSessionDurationMs(this.startedAt, this.endedAt),
-        queue: this.queue.map(toQueuePreview),
-        isGameOver: this.isGameOver,
-        lastClearCount: this.lastClearCount,
-        statusMessage: this.statusMessage,
-      });
+      callbacks.onSnapshot(this.getSnapshot());
     }
   })();
 }

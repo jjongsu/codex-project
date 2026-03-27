@@ -27,7 +27,7 @@ export default function RootLayout({ children }: RootLayoutProps) {
       <body className={bodyFont.variable}>
         <div className="min-h-screen">
           <SiteHeader />
-          <main>{children}</main>
+          <main id="site-main">{children}</main>
           <SiteFooter />
         </div>
       </body>

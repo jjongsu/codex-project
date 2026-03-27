@@ -8,7 +8,7 @@ export const BOARD_SIZE = 8;
 export const BOARD_CELL_SIZE = 48;
 export const BOARD_ORIGIN = {
   x: 68,
-  y: 44,
+  y: 68,
 };
 
 export const SCENE_SIZE = {
@@ -161,6 +161,12 @@ const SHAPE_LIBRARY: BlockJamShapeDefinition[] = [
   },
 ];
 
+export const BLOCK_JAM_SHAPE_IDS = SHAPE_LIBRARY.map((shape) => shape.id);
+
+const SHAPE_LIBRARY_BY_ID = Object.fromEntries(
+  SHAPE_LIBRARY.map((shape) => [shape.id, shape]),
+) as Record<string, BlockJamShapeDefinition>;
+
 let tokenCounter = 0;
 
 function getPieceBounds(cells: BlockJamShapeDefinition['cells']) {
@@ -172,6 +178,12 @@ function getPieceBounds(cells: BlockJamShapeDefinition['cells']) {
 
 export function createRandomQueuePiece(): BlockJamQueuePiece {
   const shape = SHAPE_LIBRARY[Math.floor(Math.random() * SHAPE_LIBRARY.length)];
+  return createQueuePieceFromDefinition(shape);
+}
+
+function createQueuePieceFromDefinition(
+  shape: BlockJamShapeDefinition,
+): BlockJamQueuePiece {
   const bounds = getPieceBounds(shape.cells);
 
   return {
@@ -185,6 +197,16 @@ export function createRandomQueuePiece(): BlockJamQueuePiece {
   };
 }
 
+export function createQueuePieceFromShapeId(shapeId: string): BlockJamQueuePiece {
+  const shape = SHAPE_LIBRARY_BY_ID[shapeId];
+
+  if (!shape) {
+    throw new Error(`Unknown Block Jam shape id: ${shapeId}`);
+  }
+
+  return createQueuePieceFromDefinition(shape);
+}
+
 export function createInitialQueue(size = 3): BlockJamQueuePiece[] {
   return Array.from({ length: size }, () => createRandomQueuePiece());
 }
@@ -192,10 +214,12 @@ export function createInitialQueue(size = 3): BlockJamQueuePiece[] {
 export function toQueuePreview(piece: BlockJamQueuePiece): BlockJamQueuePreview {
   return {
     token: piece.token,
+    id: piece.id,
     name: piece.name,
     color: piece.color,
     cellCount: piece.cells.length,
     footprint: `${piece.width}x${piece.height}`,
+    cells: piece.cells.map((cell) => ({ ...cell })),
   };
 }
 

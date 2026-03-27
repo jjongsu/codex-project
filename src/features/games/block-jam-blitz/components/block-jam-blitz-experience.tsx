@@ -37,6 +37,7 @@ const INITIAL_SNAPSHOT: BlockJamSnapshot = {
   isGameOver: false,
   lastClearCount: 0,
   statusMessage: 'Drag one of the three blocks onto the board.',
+  selection: null,
 };
 
 interface BlockJamBlitzExperienceProps {
@@ -86,6 +87,7 @@ export function BlockJamBlitzExperience({
     status: 'idle',
     message: null,
   });
+  const [isAutomationMode, setIsAutomationMode] = useState(false);
 
   const isPaused = useGameUiStore((state) => state.isPaused);
   const isMuted = useGameUiStore((state) => state.isMuted);
@@ -97,6 +99,25 @@ export function BlockJamBlitzExperience({
     () => getGameScoreApiHref(game.slug),
     [game.slug],
   );
+
+  useEffect(() => {
+    const automationEnabled =
+      new URL(window.location.href).searchParams.get('automation') === '1';
+    setIsAutomationMode(automationEnabled);
+  }, []);
+
+  useEffect(() => {
+    if (!isAutomationMode) {
+      delete document.body.dataset.gameAutomation;
+      return;
+    }
+
+    document.body.dataset.gameAutomation = game.slug;
+
+    return () => {
+      delete document.body.dataset.gameAutomation;
+    };
+  }, [game.slug, isAutomationMode]);
 
   const loadLeaderboard = useCallback(async () => {
     setLeaderboardStatus('loading');
@@ -198,37 +219,62 @@ export function BlockJamBlitzExperience({
     setSessionKey((current) => current + 1);
   }
 
+  const selectionLabel = snapshot.selection
+    ? `${snapshot.selection.pieceName} · row ${snapshot.selection.row + 1}, col ${snapshot.selection.col + 1}`
+    : 'Pick a piece from the queue and place it on the board.';
+  const selectionStateLabel = snapshot.selection
+    ? snapshot.selection.valid
+      ? 'Placement ready'
+      : 'Blocked'
+    : 'Waiting';
+  const selectionStateTone = snapshot.selection
+    ? snapshot.selection.valid
+      ? 'bg-[color:var(--color-accent-soft)] text-[color:var(--color-accent-strong)]'
+      : 'bg-red-50 text-red-700'
+    : 'bg-black/5 text-black/60';
+  const keyboardHint = 'Keyboard: Arrow keys move, A/B switch pieces, Enter places.';
+
   return (
-    <div className="grid gap-6 lg:grid-cols-[minmax(0,1.55fr)_minmax(340px,0.95fr)]">
+    <div
+      className={
+        isAutomationMode
+          ? 'mx-auto flex w-full max-w-[760px] flex-col gap-5'
+          : 'grid gap-6 lg:grid-cols-[minmax(0,1.55fr)_minmax(340px,0.95fr)]'
+      }
+    >
       <section className="overflow-hidden rounded-[32px] border border-black/10 bg-white shadow-[0_24px_70px_rgba(15,23,42,0.08)]">
-        <div className="border-b border-black/10 bg-[color:var(--color-background-soft)] px-6 py-5">
+        <div
+          className={`border-b border-black/10 bg-[color:var(--color-background-soft)] ${
+            isAutomationMode ? 'px-5 py-4 sm:px-6' : 'px-6 py-5'
+          }`}
+        >
           <div className="flex flex-wrap items-center justify-between gap-4">
             <div>
               <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[color:var(--color-accent-strong)]">
-                Live Prototype
+                {isAutomationMode ? 'Automation Focus' : 'Live Prototype'}
               </p>
               <h1 className="mt-2 text-3xl font-semibold text-black">{game.name}</h1>
             </div>
 
-            <div className="flex flex-wrap gap-2">
+            <div className="flex flex-wrap gap-2 sm:justify-end">
               <button
                 type="button"
                 onClick={() => setPaused(!isPaused)}
-                className="rounded-full border border-black/10 px-4 py-2 text-sm font-medium text-black transition hover:bg-black/5"
+                className="min-w-[112px] rounded-full border border-black/10 px-4 py-2 text-sm font-medium text-black transition hover:bg-black/5"
               >
                 {isPaused ? 'Resume' : 'Pause'}
               </button>
               <button
                 type="button"
                 onClick={toggleMuted}
-                className="rounded-full border border-black/10 px-4 py-2 text-sm font-medium text-black transition hover:bg-black/5"
+                className="min-w-[112px] rounded-full border border-black/10 px-4 py-2 text-sm font-medium text-black transition hover:bg-black/5"
               >
                 {isMuted ? 'Unmute' : 'Mute'}
               </button>
               <button
                 type="button"
                 onClick={handleRestart}
-                className="rounded-full bg-black px-4 py-2 text-sm font-medium text-white transition hover:bg-[color:var(--color-accent-strong)]"
+                className="min-w-[132px] rounded-full bg-black px-4 py-2 text-sm font-medium text-white transition hover:bg-[color:var(--color-accent-strong)]"
               >
                 Restart Run
               </button>
@@ -255,13 +301,29 @@ export function BlockJamBlitzExperience({
               <p className="mt-2 text-2xl font-semibold text-black">{snapshot.moveCount}</p>
             </div>
           </div>
+
+          <div className="mt-4 flex flex-wrap items-center gap-3">
+            <span
+              className={`rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] ${selectionStateTone}`}
+            >
+              {selectionStateLabel}
+            </span>
+            <p className="text-sm text-black/70">{selectionLabel}</p>
+          </div>
+
+          {isAutomationMode ? (
+            <p className="mt-3 text-xs font-medium uppercase tracking-[0.18em] text-black/45">
+              {keyboardHint}
+            </p>
+          ) : null}
         </div>
 
-        <div className="space-y-4 p-6">
+        <div className={`space-y-4 ${isAutomationMode ? 'p-4 sm:p-5' : 'p-6'}`}>
           <BlockJamBlitzCanvas
             key={sessionKey}
             sessionKey={sessionKey}
             isPaused={isPaused}
+            isAutomationMode={isAutomationMode}
             onSnapshot={setSnapshot}
           />
 
@@ -276,18 +338,87 @@ export function BlockJamBlitzExperience({
               Session length {Math.floor(snapshot.sessionDurationMs / 1000)}s
             </p>
           </div>
+
+          {snapshot.isGameOver ? (
+            <div className="rounded-[24px] border border-[color:var(--color-accent)]/25 bg-[linear-gradient(135deg,rgba(23,201,178,0.12),rgba(255,255,255,0.95))] px-5 py-4">
+              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[color:var(--color-accent-strong)]">
+                Run Locked
+              </p>
+              <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <p className="text-2xl font-semibold text-black">{snapshot.score}</p>
+                  <p className="mt-1 text-sm text-black/65">
+                    Enter 1 to 3 initials and save the run to the leaderboard.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleRestart}
+                  className="rounded-full bg-black px-4 py-2 text-sm font-medium text-white transition hover:bg-[color:var(--color-accent-strong)]"
+                >
+                  Start Fresh Run
+                </button>
+              </div>
+            </div>
+          ) : null}
+
+          {isAutomationMode ? (
+            <div className="rounded-[24px] border border-black/10 bg-white/90 p-4 shadow-[0_20px_60px_rgba(15,23,42,0.06)]">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[color:var(--color-accent-strong)]">
+                    Queue
+                  </p>
+                  <p className="mt-1 text-sm text-black/55">
+                    Keep the next three shapes readable while testing placement feel.
+                  </p>
+                </div>
+                <span className="rounded-full bg-black/5 px-3 py-1 text-xs font-medium text-black/60">
+                  Canvas focus mode
+                </span>
+              </div>
+              <div className="mt-4 grid grid-cols-3 gap-3">
+                {snapshot.queue.map((piece, index) => (
+                  <div
+                    key={piece.token}
+                    className={`rounded-[22px] border px-3 py-3 ${
+                      snapshot.selection?.pieceIndex === index
+                        ? 'border-[color:var(--color-accent)] bg-[color:var(--color-accent-soft)]/70'
+                        : 'border-black/8 bg-[color:var(--color-background-soft)]'
+                    }`}
+                  >
+                    <p className="text-sm font-semibold text-black">{piece.name}</p>
+                    <p className="mt-1 text-xs text-black/48">{piece.footprint}</p>
+                    <p className="mt-3 text-xs font-medium text-black/55">
+                      {piece.cellCount} cells
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : null}
         </div>
       </section>
 
-      <aside className="space-y-4">
+      {isAutomationMode ? null : (
+        <aside className="space-y-4">
         <div className="rounded-[28px] border border-black/10 bg-white/90 p-5 shadow-[0_20px_60px_rgba(15,23,42,0.06)]">
           <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[color:var(--color-accent-strong)]">
             Queue
           </p>
-          <div className="mt-4 space-y-3">
+          <div className="mt-4 grid gap-3 sm:grid-cols-3 lg:grid-cols-1">
             {snapshot.queue.length > 0 ? (
-              snapshot.queue.map((piece) => (
-                <QueuePreviewCard key={piece.token} piece={piece} />
+              snapshot.queue.map((piece, index) => (
+                <div
+                  key={piece.token}
+                  className={`rounded-[24px] ${
+                    snapshot.selection?.pieceIndex === index
+                      ? 'ring-2 ring-[color:var(--color-accent)] ring-offset-2 ring-offset-white'
+                      : ''
+                  }`}
+                >
+                  <QueuePreviewCard piece={piece} />
+                </div>
               ))
             ) : (
               <p className="text-sm text-black/55">
@@ -427,7 +558,8 @@ export function BlockJamBlitzExperience({
             {game.scoreRule.validationHint}
           </p>
         </div>
-      </aside>
+        </aside>
+      )}
     </div>
   );
 }
