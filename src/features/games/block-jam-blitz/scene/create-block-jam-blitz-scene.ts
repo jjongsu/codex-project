@@ -35,6 +35,7 @@ interface BlockJamSceneOptions {
 interface DragState {
   pieceIndex: number;
   piece: BlockJamQueuePiece;
+  pointerKind: 'mouse' | 'touch';
   offsetX: number;
   offsetY: number;
   preview: any;
@@ -42,6 +43,7 @@ interface DragState {
   candidateRow: number | null;
   candidateCol: number | null;
   valid: boolean;
+  nearBoard: boolean;
 }
 
 type BoardState = Array<Array<string | null>>;
@@ -56,6 +58,21 @@ const AUTOMATION_QUEUE_SEQUENCE = [
   't-4',
   'square-2',
 ] as const;
+
+const SCENE_DEPTH = {
+  backdrop: -20,
+  board: 1,
+  ghost: 2,
+  placementFeedback: 3,
+  queueSlot: 4,
+  queuePiece: 6,
+  queueText: 7,
+  dragPreview: 20,
+} as const;
+
+const BOARD_CELL_INSET = 2;
+const BOARD_CELL_DRAW_SIZE = BOARD_CELL_SIZE - BOARD_CELL_INSET * 2;
+const BOARD_CELL_RADIUS = 12;
 
 function createBoard(): BoardState {
   return Array.from({ length: BOARD_SIZE }, () =>
@@ -133,9 +150,13 @@ export function createBlockJamBlitzScene(
 
     private ghostGraphics!: any;
 
+    private placementFeedbackGraphics!: any;
+
     private queueSlotBackgrounds: any[] = [];
 
     private queueDisplays: any[] = [];
+
+    private placementFeedbackTween: any = null;
 
     private score = 0;
 
@@ -180,9 +201,11 @@ export function createBlockJamBlitzScene(
     create() {
       this.drawBackdrop();
       this.boardGraphics = this.add.graphics();
-      this.boardGraphics.setDepth(1);
+      this.boardGraphics.setDepth(SCENE_DEPTH.board);
       this.ghostGraphics = this.add.graphics();
-      this.ghostGraphics.setDepth(2);
+      this.ghostGraphics.setDepth(SCENE_DEPTH.ghost);
+      this.placementFeedbackGraphics = this.add.graphics();
+      this.placementFeedbackGraphics.setDepth(SCENE_DEPTH.placementFeedback);
       this.lastClockSampleAt = Date.now();
       this.buildQueueArea();
       this.registerInput();
@@ -222,6 +245,7 @@ export function createBlockJamBlitzScene(
           col: this.dragState.candidateCol ?? this.cursorCol,
           valid: this.dragState.valid,
           inputMode: 'drag',
+          pointerKind: this.dragState.pointerKind,
         };
       }
 
@@ -238,6 +262,7 @@ export function createBlockJamBlitzScene(
         col: this.cursorCol,
         valid: this.canPlacePiece(selectedPiece, this.cursorRow, this.cursorCol),
         inputMode: 'cursor',
+        pointerKind: 'mouse',
       };
     }
 
@@ -298,6 +323,7 @@ export function createBlockJamBlitzScene(
               row: this.dragState.candidateRow,
               col: this.dragState.candidateCol,
               valid: this.dragState.valid,
+              pointerKind: this.dragState.pointerKind,
             }
           : null,
         isGameOver: this.isGameOver,
@@ -343,6 +369,7 @@ export function createBlockJamBlitzScene(
       this.automationSequenceIndex = 0;
       this.automationScenario = scenario;
       this.lastDragFeedbackKey = '';
+      this.clearPlacementFeedback();
 
       if (scenario === 'midgame') {
         this.board = createMidgameBoard();
@@ -414,7 +441,7 @@ export function createBlockJamBlitzScene(
 
     private drawBackdrop() {
       const backdrop = this.add.graphics();
-      backdrop.setDepth(-20);
+      backdrop.setDepth(SCENE_DEPTH.backdrop);
       backdrop.fillStyle(0xfffcf5, 1);
       backdrop.fillRoundedRect(14, 14, SCENE_SIZE.width - 28, SCENE_SIZE.height - 28, 32);
       backdrop.lineStyle(2, 0xf1e8d8, 1);
@@ -472,11 +499,11 @@ export function createBlockJamBlitzScene(
             cellColor ? 0.95 : 1,
           );
           this.boardGraphics.fillRoundedRect(
-            x + 2,
-            y + 2,
-            BOARD_CELL_SIZE - 4,
-            BOARD_CELL_SIZE - 4,
-            12,
+            x + BOARD_CELL_INSET,
+            y + BOARD_CELL_INSET,
+            BOARD_CELL_DRAW_SIZE,
+            BOARD_CELL_DRAW_SIZE,
+            BOARD_CELL_RADIUS,
           );
           this.boardGraphics.lineStyle(
             cellColor ? 2 : 2,
@@ -484,11 +511,11 @@ export function createBlockJamBlitzScene(
             1,
           );
           this.boardGraphics.strokeRoundedRect(
-            x + 2,
-            y + 2,
-            BOARD_CELL_SIZE - 4,
-            BOARD_CELL_SIZE - 4,
-            12,
+            x + BOARD_CELL_INSET,
+            y + BOARD_CELL_INSET,
+            BOARD_CELL_DRAW_SIZE,
+            BOARD_CELL_DRAW_SIZE,
+            BOARD_CELL_RADIUS,
           );
         }
       }
@@ -499,7 +526,7 @@ export function createBlockJamBlitzScene(
         const x = QUEUE_LAYOUT.x + index * (QUEUE_LAYOUT.slotWidth + QUEUE_LAYOUT.gap);
         const y = QUEUE_LAYOUT.y;
         const graphics = this.add.graphics();
-        graphics.setDepth(4);
+        graphics.setDepth(SCENE_DEPTH.queueSlot);
         this.queueSlotBackgrounds.push(graphics);
       }
 
@@ -509,7 +536,7 @@ export function createBlockJamBlitzScene(
         color: '#5d5242',
         fontStyle: '700',
       });
-      queueLabel.setDepth(5);
+      queueLabel.setDepth(SCENE_DEPTH.queueText);
       this.redrawQueueSlotBackgrounds();
     }
 
@@ -543,7 +570,34 @@ export function createBlockJamBlitzScene(
         const pieceHeight = piece.height * previewScale;
         const pieceX = slotX + (QUEUE_LAYOUT.slotWidth - pieceWidth) / 2;
         const pieceY = slotY + 32 + (QUEUE_LAYOUT.slotHeight - 56 - pieceHeight) / 2;
-        const display = this.createPieceDisplay(piece, pieceX, pieceY, previewScale, true);
+        const display = this.createPieceDisplay(piece, pieceX, pieceY, previewScale, false);
+        display.setSize(pieceWidth, pieceHeight);
+        display.setDepth(SCENE_DEPTH.queuePiece);
+        const leftExpansion = Math.min(
+          28,
+          Math.max(12, pieceX - slotX - 8),
+        );
+        const rightExpansion = Math.min(
+          28,
+          Math.max(12, slotX + QUEUE_LAYOUT.slotWidth - (pieceX + pieceWidth) - 8),
+        );
+        const topExpansion = Math.min(
+          20,
+          Math.max(10, pieceY - slotY - 10),
+        );
+        const bottomExpansion = Math.min(
+          24,
+          Math.max(12, slotY + QUEUE_LAYOUT.slotHeight - (pieceY + pieceHeight) - 14),
+        );
+        display.setInteractive(
+          new Phaser.Geom.Rectangle(
+            -leftExpansion,
+            -topExpansion,
+            pieceWidth + leftExpansion + rightExpansion,
+            pieceHeight + topExpansion + bottomExpansion,
+          ),
+          Phaser.Geom.Rectangle.Contains,
+        );
 
         const label = this.add.text(slotX + 16, slotY + 16, piece.name, {
           fontFamily: 'Arial, Helvetica, sans-serif',
@@ -551,6 +605,7 @@ export function createBlockJamBlitzScene(
           color: '#433c32',
           fontStyle: '700',
         });
+        label.setDepth(SCENE_DEPTH.queueText);
 
         const footprint = this.add.text(
           slotX + 16,
@@ -562,6 +617,7 @@ export function createBlockJamBlitzScene(
             color: '#7d6f5d',
           },
         );
+        footprint.setDepth(SCENE_DEPTH.queueText);
 
         display.setData('pieceIndex', index);
         display.setData('pieceToken', piece.token);
@@ -585,7 +641,7 @@ export function createBlockJamBlitzScene(
       interactive: boolean,
     ) {
       const container = this.add.container(x, y);
-      container.setDepth(interactive ? 6 : 3);
+      container.setDepth(SCENE_DEPTH.queuePiece);
 
       piece.cells.forEach((cell) => {
         const rect = this.add.rectangle(
@@ -628,32 +684,36 @@ export function createBlockJamBlitzScene(
         return;
       }
 
-      keyboard.on('keydown-LEFT', () => {
+      keyboard.on('keydown-LEFT', (event: KeyboardEvent) => {
         if (this.shouldIgnoreKeyboardInput()) {
           return;
         }
 
+        event.preventDefault();
         this.moveCursor(0, -1);
       });
-      keyboard.on('keydown-RIGHT', () => {
+      keyboard.on('keydown-RIGHT', (event: KeyboardEvent) => {
         if (this.shouldIgnoreKeyboardInput()) {
           return;
         }
 
+        event.preventDefault();
         this.moveCursor(0, 1);
       });
-      keyboard.on('keydown-UP', () => {
+      keyboard.on('keydown-UP', (event: KeyboardEvent) => {
         if (this.shouldIgnoreKeyboardInput()) {
           return;
         }
 
+        event.preventDefault();
         this.moveCursor(-1, 0);
       });
-      keyboard.on('keydown-DOWN', () => {
+      keyboard.on('keydown-DOWN', (event: KeyboardEvent) => {
         if (this.shouldIgnoreKeyboardInput()) {
           return;
         }
 
+        event.preventDefault();
         this.moveCursor(1, 0);
       });
       keyboard.on('keydown-A', () => {
@@ -677,11 +737,12 @@ export function createBlockJamBlitzScene(
 
         this.placeSelectedPieceAtCursor();
       });
-      keyboard.on('keydown-SPACE', () => {
+      keyboard.on('keydown-SPACE', (event: KeyboardEvent) => {
         if (this.shouldIgnoreKeyboardInput()) {
           return;
         }
 
+        event.preventDefault();
         this.placeSelectedPieceAtCursor();
       });
     }
@@ -751,31 +812,46 @@ export function createBlockJamBlitzScene(
 
       const isTouch =
         pointer?.event?.pointerType === 'touch' || Boolean(pointer?.wasTouch);
-      const verticalAssist = isTouch ? BOARD_CELL_SIZE * 1.2 : 0;
+      const pointerKind = isTouch ? 'touch' : 'mouse';
+      const previewWidth = piece.width * BOARD_CELL_SIZE;
+      const previewHeight = piece.height * BOARD_CELL_SIZE;
+      const verticalAssist = isTouch
+        ? Math.max(BOARD_CELL_SIZE * 1.45, previewHeight * 0.7)
+        : 0;
+      const previewX = isTouch ? pointer.x - previewWidth / 2 : sourceDisplay.x;
+      const previewY = isTouch
+        ? pointer.y - previewHeight / 2 - verticalAssist
+        : sourceDisplay.y;
 
       const preview = this.createPieceDisplay(
         piece,
-        sourceDisplay.x,
-        sourceDisplay.y,
+        previewX,
+        previewY,
         BOARD_CELL_SIZE,
         false,
       );
       preview.setAlpha(0.9);
-      preview.setDepth(20);
+      preview.setDepth(SCENE_DEPTH.dragPreview);
 
       this.dragState = {
         pieceIndex,
         piece,
+        pointerKind,
         source: sourceDisplay,
         preview,
-        offsetX: pointer.x - sourceDisplay.x,
-        offsetY: pointer.y - sourceDisplay.y + verticalAssist,
+        offsetX: isTouch ? previewWidth / 2 : pointer.x - sourceDisplay.x,
+        offsetY: isTouch
+          ? previewHeight / 2 + verticalAssist
+          : pointer.y - sourceDisplay.y,
         candidateRow: null,
         candidateCol: null,
         valid: false,
+        nearBoard: false,
       };
       this.lastDragFeedbackKey = '';
-      this.statusMessage = `Dragging ${piece.name}. Release on a highlighted slot.`;
+      this.statusMessage = isTouch
+        ? `Dragging ${piece.name}. Lift above your thumb and release on a glowing gap.`
+        : `Dragging ${piece.name}. Release on a highlighted slot.`;
 
       this.emitSnapshot();
     }
@@ -788,29 +864,76 @@ export function createBlockJamBlitzScene(
       this.dragState.preview.x = pointer.x - this.dragState.offsetX;
       this.dragState.preview.y = pointer.y - this.dragState.offsetY;
 
-      const candidateCol = Math.round(
+      const rawCandidateCol = Math.round(
         (this.dragState.preview.x - BOARD_ORIGIN.x) / BOARD_CELL_SIZE,
       );
-      const candidateRow = Math.round(
+      const rawCandidateRow = Math.round(
         (this.dragState.preview.y - BOARD_ORIGIN.y) / BOARD_CELL_SIZE,
       );
+      const boardAssistPadding =
+        this.dragState.pointerKind === 'touch'
+          ? BOARD_CELL_SIZE * 0.75
+          : BOARD_CELL_SIZE * 0.2;
+      const boardLeft = BOARD_ORIGIN.x - boardAssistPadding;
+      const boardTop = BOARD_ORIGIN.y - boardAssistPadding;
+      const boardRight =
+        BOARD_ORIGIN.x + BOARD_SIZE * BOARD_CELL_SIZE + boardAssistPadding;
+      const boardBottom =
+        BOARD_ORIGIN.y + BOARD_SIZE * BOARD_CELL_SIZE + boardAssistPadding;
+      const previewRight =
+        this.dragState.preview.x + this.dragState.piece.width * BOARD_CELL_SIZE;
+      const previewBottom =
+        this.dragState.preview.y + this.dragState.piece.height * BOARD_CELL_SIZE;
+      const nearBoard =
+        previewRight >= boardLeft &&
+        this.dragState.preview.x <= boardRight &&
+        previewBottom >= boardTop &&
+        this.dragState.preview.y <= boardBottom;
+      const candidateCol = nearBoard
+        ? Phaser.Math.Clamp(
+            rawCandidateCol,
+            0,
+            Math.max(0, BOARD_SIZE - this.dragState.piece.width),
+          )
+        : rawCandidateCol;
+      const candidateRow = nearBoard
+        ? Phaser.Math.Clamp(
+            rawCandidateRow,
+            0,
+            Math.max(0, BOARD_SIZE - this.dragState.piece.height),
+          )
+        : rawCandidateRow;
       const valid = this.canPlacePiece(this.dragState.piece, candidateRow, candidateCol);
 
       this.dragState.candidateRow = candidateRow;
       this.dragState.candidateCol = candidateCol;
       this.dragState.valid = valid;
+      this.dragState.nearBoard = nearBoard;
 
       this.drawGhost(candidateRow, candidateCol, this.dragState.piece, valid);
 
-      const feedbackKey = `${candidateRow}:${candidateCol}:${valid}`;
+      const feedbackKey = `${candidateRow}:${candidateCol}:${valid}:${nearBoard}`;
 
       if (feedbackKey !== this.lastDragFeedbackKey) {
-        if (!Number.isFinite(candidateRow) || !Number.isFinite(candidateCol)) {
-          this.statusMessage = `Dragging ${this.dragState.piece.name}. Move onto the board to preview placement.`;
+        if (
+          !nearBoard ||
+          !Number.isFinite(candidateRow) ||
+          !Number.isFinite(candidateCol)
+        ) {
+          this.statusMessage =
+            this.dragState.pointerKind === 'touch'
+              ? `Dragging ${this.dragState.piece.name}. Slide onto the board and keep your thumb below the outline.`
+              : `Dragging ${this.dragState.piece.name}. Move onto the board to preview placement.`;
         } else if (valid) {
-          this.statusMessage = `Release to place ${this.dragState.piece.name} at row ${candidateRow + 1}, col ${candidateCol + 1}.`;
+          this.statusMessage =
+            this.dragState.pointerKind === 'touch'
+              ? `Release now to lock ${this.dragState.piece.name} at row ${candidateRow + 1}, col ${candidateCol + 1}.`
+              : `Release to place ${this.dragState.piece.name} at row ${candidateRow + 1}, col ${candidateCol + 1}.`;
         } else {
-          this.statusMessage = `${this.dragState.piece.name} does not fit at row ${candidateRow + 1}, col ${candidateCol + 1}.`;
+          this.statusMessage =
+            this.dragState.pointerKind === 'touch'
+              ? `${this.dragState.piece.name} is blocked there. Slide to an open gap.`
+              : `${this.dragState.piece.name} does not fit at row ${candidateRow + 1}, col ${candidateCol + 1}.`;
         }
 
         this.lastDragFeedbackKey = feedbackKey;
@@ -842,7 +965,13 @@ export function createBlockJamBlitzScene(
         this.placePiece(pieceIndex, piece, candidateRow, candidateCol);
       } else {
         source.setAlpha(1);
-        this.statusMessage = `${piece.name} could not be placed there. Try another gap.`;
+        if (this.canRenderPlacementFeedback(candidateRow, candidateCol, piece)) {
+          this.showPlacementFeedback(candidateRow!, candidateCol!, piece, 'invalid');
+        }
+        this.statusMessage =
+          this.dragState.pointerKind === 'touch'
+            ? `${piece.name} did not lock in. Slide to a teal outline and release again.`
+            : `${piece.name} could not be placed there. Try another gap.`;
       }
 
       preview.destroy();
@@ -855,6 +984,114 @@ export function createBlockJamBlitzScene(
 
     private clearGhost() {
       this.ghostGraphics.clear();
+    }
+
+    private clearPlacementFeedback() {
+      if (this.placementFeedbackTween) {
+        this.placementFeedbackTween.stop();
+        this.placementFeedbackTween = null;
+      }
+
+      this.placementFeedbackGraphics.clear();
+    }
+
+    private canRenderPlacementFeedback(
+      row: number | null,
+      col: number | null,
+      piece: BlockJamQueuePiece,
+    ) {
+      if (!Number.isFinite(row) || !Number.isFinite(col)) {
+        return false;
+      }
+
+      const startRow = row ?? 0;
+      const startCol = col ?? 0;
+      const endRow = startRow + piece.height - 1;
+      const endCol = startCol + piece.width - 1;
+
+      return endRow >= 0 && endCol >= 0 && startRow < BOARD_SIZE && startCol < BOARD_SIZE;
+    }
+
+    private drawPlacementFeedback(
+      row: number,
+      col: number,
+      piece: BlockJamQueuePiece,
+      variant: 'valid' | 'invalid' | 'clear',
+      alpha: number,
+    ) {
+      const fillColor =
+        variant === 'invalid' ? 0xef4444 : variant === 'clear' ? 0xfacc15 : 0x14b8a6;
+      const strokeColor =
+        variant === 'invalid' ? 0x991b1b : variant === 'clear' ? 0xb45309 : 0x0f766e;
+
+      this.placementFeedbackGraphics.clear();
+      this.placementFeedbackGraphics.fillStyle(fillColor, alpha * 0.24);
+      this.placementFeedbackGraphics.lineStyle(3, strokeColor, alpha * 0.92);
+
+      piece.cells.forEach((cell) => {
+        const boardX = BOARD_ORIGIN.x + (col + cell.x) * BOARD_CELL_SIZE;
+        const boardY = BOARD_ORIGIN.y + (row + cell.y) * BOARD_CELL_SIZE;
+
+        this.placementFeedbackGraphics.fillRoundedRect(
+          boardX + BOARD_CELL_INSET,
+          boardY + BOARD_CELL_INSET,
+          BOARD_CELL_DRAW_SIZE,
+          BOARD_CELL_DRAW_SIZE,
+          BOARD_CELL_RADIUS,
+        );
+        this.placementFeedbackGraphics.strokeRoundedRect(
+          boardX + BOARD_CELL_INSET,
+          boardY + BOARD_CELL_INSET,
+          BOARD_CELL_DRAW_SIZE,
+          BOARD_CELL_DRAW_SIZE,
+          BOARD_CELL_RADIUS,
+        );
+      });
+
+      const maxX = Math.max(...piece.cells.map((cell) => cell.x));
+      const maxY = Math.max(...piece.cells.map((cell) => cell.y));
+      const outlineX = BOARD_ORIGIN.x + col * BOARD_CELL_SIZE + 2;
+      const outlineY = BOARD_ORIGIN.y + row * BOARD_CELL_SIZE + 2;
+      const outlineWidth = (maxX + 1) * BOARD_CELL_SIZE - 4;
+      const outlineHeight = (maxY + 1) * BOARD_CELL_SIZE - 4;
+
+      this.placementFeedbackGraphics.lineStyle(4, strokeColor, alpha);
+      this.placementFeedbackGraphics.strokeRoundedRect(
+        outlineX,
+        outlineY,
+        outlineWidth,
+        outlineHeight,
+        16,
+      );
+    }
+
+    private showPlacementFeedback(
+      row: number,
+      col: number,
+      piece: BlockJamQueuePiece,
+      variant: 'valid' | 'invalid' | 'clear',
+    ) {
+      this.clearPlacementFeedback();
+      this.drawPlacementFeedback(row, col, piece, variant, 1);
+
+      this.placementFeedbackTween = this.tweens.addCounter({
+        from: 1,
+        to: 0,
+        duration: 280,
+        onUpdate: (tween: any) => {
+          this.drawPlacementFeedback(
+            row,
+            col,
+            piece,
+            variant,
+            tween.getValue(),
+          );
+        },
+        onComplete: () => {
+          this.placementFeedbackTween = null;
+          this.placementFeedbackGraphics.clear();
+        },
+      });
     }
 
     private drawGhost(
@@ -877,18 +1114,18 @@ export function createBlockJamBlitzScene(
         const boardY = BOARD_ORIGIN.y + (row + cell.y) * BOARD_CELL_SIZE;
 
         this.ghostGraphics.fillRoundedRect(
-          boardX + 4,
-          boardY + 4,
-          BOARD_CELL_SIZE - 8,
-          BOARD_CELL_SIZE - 8,
-          12,
+          boardX + BOARD_CELL_INSET,
+          boardY + BOARD_CELL_INSET,
+          BOARD_CELL_DRAW_SIZE,
+          BOARD_CELL_DRAW_SIZE,
+          BOARD_CELL_RADIUS,
         );
         this.ghostGraphics.strokeRoundedRect(
-          boardX + 4,
-          boardY + 4,
-          BOARD_CELL_SIZE - 8,
-          BOARD_CELL_SIZE - 8,
-          12,
+          boardX + BOARD_CELL_INSET,
+          boardY + BOARD_CELL_INSET,
+          BOARD_CELL_DRAW_SIZE,
+          BOARD_CELL_DRAW_SIZE,
+          BOARD_CELL_RADIUS,
         );
       });
 
@@ -994,6 +1231,12 @@ export function createBlockJamBlitzScene(
       this.selectedPieceIndex = pieceIndex;
       this.cursorRow = row;
       this.cursorCol = col;
+      this.showPlacementFeedback(
+        row,
+        col,
+        piece,
+        clearedCount > 0 ? 'clear' : 'valid',
+      );
       this.drawBoard();
       this.rebuildQueueDisplays();
       this.checkGameOver();

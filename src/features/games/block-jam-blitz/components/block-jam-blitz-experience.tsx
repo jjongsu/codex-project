@@ -88,6 +88,7 @@ export function BlockJamBlitzExperience({
     message: null,
   });
   const [isAutomationMode, setIsAutomationMode] = useState(false);
+  const [prefersTouchUi, setPrefersTouchUi] = useState(false);
 
   const isPaused = useGameUiStore((state) => state.isPaused);
   const isMuted = useGameUiStore((state) => state.isMuted);
@@ -104,6 +105,20 @@ export function BlockJamBlitzExperience({
     const automationEnabled =
       new URL(window.location.href).searchParams.get('automation') === '1';
     setIsAutomationMode(automationEnabled);
+  }, []);
+
+  useEffect(() => {
+    const mediaQuery = window.matchMedia('(pointer: coarse)');
+    const updatePointerMode = () => {
+      setPrefersTouchUi(mediaQuery.matches || navigator.maxTouchPoints > 0);
+    };
+
+    updatePointerMode();
+    mediaQuery.addEventListener('change', updatePointerMode);
+
+    return () => {
+      mediaQuery.removeEventListener('change', updatePointerMode);
+    };
   }, []);
 
   useEffect(() => {
@@ -233,6 +248,69 @@ export function BlockJamBlitzExperience({
       : 'bg-red-50 text-red-700'
     : 'bg-black/5 text-black/60';
   const keyboardHint = 'Keyboard: Arrow keys move, A/B switch pieces, Enter places.';
+  const touchHint =
+    'Touch: Hold a block, keep your thumb below the outline, release on teal.';
+  const activeControlHint = prefersTouchUi ? touchHint : keyboardHint;
+
+  const submitCard = (
+    <div className="rounded-[28px] border border-black/10 bg-white/90 p-5 shadow-[0_20px_60px_rgba(15,23,42,0.06)]">
+      <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[color:var(--color-accent-strong)]">
+        Submit Score
+      </p>
+      <form className="mt-4 space-y-4" onSubmit={handleSubmit}>
+        <div className="rounded-[22px] bg-[color:var(--color-background-soft)] px-4 py-3">
+          <p className="text-xs uppercase tracking-[0.18em] text-black/45">Final Score</p>
+          <p className="mt-2 text-3xl font-semibold text-black">{snapshot.score}</p>
+        </div>
+
+        <label className="block space-y-2" htmlFor="block-jam-player-name">
+          <span className="text-sm font-medium text-black">Player Name</span>
+          <input
+            id="block-jam-player-name"
+            name="playerName"
+            value={playerName}
+            onChange={(event) => {
+              setPlayerName(
+                event.currentTarget.value
+                  .toUpperCase()
+                  .replace(/[^A-Z]/g, '')
+                  .slice(0, 3),
+              );
+            }}
+            placeholder="AAA"
+            maxLength={3}
+            className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-lg font-semibold uppercase tracking-[0.3em] text-black outline-none transition focus:border-[color:var(--color-accent)]"
+          />
+        </label>
+
+        <button
+          type="submit"
+          disabled={!canSubmit}
+          className="w-full rounded-full bg-black px-4 py-3 text-sm font-medium text-white transition enabled:hover:bg-[color:var(--color-accent-strong)] disabled:cursor-not-allowed disabled:bg-black/25"
+        >
+          {submitState.status === 'submitting' ? 'Saving...' : 'Save To Leaderboard'}
+        </button>
+
+        <p className="text-xs leading-5 text-black/55">
+          {snapshot.isGameOver
+            ? 'Game over. Enter 1 to 3 uppercase letters and save the run.'
+            : 'The form unlocks when the board has no valid placements left.'}
+        </p>
+
+        {submitState.message ? (
+          <p
+            className={`text-sm ${
+              submitState.status === 'error'
+                ? 'text-red-600'
+                : 'text-[color:var(--color-accent-strong)]'
+            }`}
+          >
+            {submitState.message}
+          </p>
+        ) : null}
+      </form>
+    </div>
+  );
 
   return (
     <div
@@ -312,9 +390,12 @@ export function BlockJamBlitzExperience({
           </div>
 
           {isAutomationMode ? (
-            <p className="mt-3 text-xs font-medium uppercase tracking-[0.18em] text-black/45">
-              {keyboardHint}
-            </p>
+            <div className="mt-3 rounded-[20px] bg-white/75 px-4 py-3 text-sm text-black/60">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-black/45">
+                Control Hint
+              </p>
+              <p className="mt-2 leading-6">{activeControlHint}</p>
+            </div>
           ) : null}
         </div>
 
@@ -360,6 +441,10 @@ export function BlockJamBlitzExperience({
                 </button>
               </div>
             </div>
+          ) : null}
+
+          {snapshot.isGameOver && !isAutomationMode ? (
+            <div className="lg:hidden">{submitCard}</div>
           ) : null}
 
           {isAutomationMode ? (
@@ -428,63 +513,7 @@ export function BlockJamBlitzExperience({
           </div>
         </div>
 
-        <div className="rounded-[28px] border border-black/10 bg-white/90 p-5 shadow-[0_20px_60px_rgba(15,23,42,0.06)]">
-          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[color:var(--color-accent-strong)]">
-            Submit Score
-          </p>
-          <form className="mt-4 space-y-4" onSubmit={handleSubmit}>
-            <div className="rounded-[22px] bg-[color:var(--color-background-soft)] px-4 py-3">
-              <p className="text-xs uppercase tracking-[0.18em] text-black/45">Final Score</p>
-              <p className="mt-2 text-3xl font-semibold text-black">{snapshot.score}</p>
-            </div>
-
-            <label className="block space-y-2">
-              <span className="text-sm font-medium text-black">Player Name</span>
-              <input
-                value={playerName}
-                onChange={(event) => {
-                  setPlayerName(
-                    event.currentTarget.value
-                      .toUpperCase()
-                      .replace(/[^A-Z]/g, '')
-                      .slice(0, 3),
-                  );
-                }}
-                placeholder="AAA"
-                maxLength={3}
-                className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-lg font-semibold uppercase tracking-[0.3em] text-black outline-none transition focus:border-[color:var(--color-accent)]"
-              />
-            </label>
-
-            <button
-              type="submit"
-              disabled={!canSubmit}
-              className="w-full rounded-full bg-black px-4 py-3 text-sm font-medium text-white transition enabled:hover:bg-[color:var(--color-accent-strong)] disabled:cursor-not-allowed disabled:bg-black/25"
-            >
-              {submitState.status === 'submitting'
-                ? 'Saving...'
-                : 'Save To Leaderboard'}
-            </button>
-
-            <p className="text-xs leading-5 text-black/55">
-              {snapshot.isGameOver
-                ? 'Game over. Enter 1 to 3 uppercase letters and save the run.'
-                : 'The form unlocks when the board has no valid placements left.'}
-            </p>
-
-            {submitState.message ? (
-              <p
-                className={`text-sm ${
-                  submitState.status === 'error'
-                    ? 'text-red-600'
-                    : 'text-[color:var(--color-accent-strong)]'
-                }`}
-              >
-                {submitState.message}
-              </p>
-            ) : null}
-          </form>
-        </div>
+        <div className="hidden lg:block">{submitCard}</div>
 
         <div className="rounded-[28px] border border-black/10 bg-white/90 p-5 shadow-[0_20px_60px_rgba(15,23,42,0.06)]">
           <div className="flex items-center justify-between gap-3">

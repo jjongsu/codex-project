@@ -50,6 +50,7 @@ export interface BlockJamSelectionState {
   col: number;
   valid: boolean;
   inputMode: 'cursor' | 'drag';
+  pointerKind: 'mouse' | 'touch';
 }
 
 export type BlockJamAutomationScenario =
@@ -83,6 +84,7 @@ export interface BlockJamAutomationDragState {
   row: number | null;
   col: number | null;
   valid: boolean;
+  pointerKind: 'mouse' | 'touch';
 }
 
 export interface BlockJamAutomationState {
